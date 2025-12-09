@@ -197,6 +197,40 @@ export const authAPI = {
   },
 
   /**
+   * Validate registration payload without creating user
+   * @param {Object} userData - Raw registration data
+   * @returns {Promise<Object>} Validation response
+   */
+  testRegistration: async ({ name, badgeId, password, email }) => {
+    const requestData = {
+      name: name?.trim() || '',
+      badgeId: badgeId?.trim() || '',
+      password: password || '',
+      ...(email ? { email: email.trim() } : {}),
+    };
+
+    console.log('Testing registration payload', {
+      ...requestData,
+      password: '***redacted***',
+    });
+
+    try {
+      const response = await api.post('/api/auth/test-register', requestData);
+      return response.data || response;
+    } catch (error) {
+      console.error('Test registration error', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+      });
+      throw new Error(
+        (error.response?.data && error.response.data.detail) ||
+          'Registration data is invalid. Please review your input.'
+      );
+    }
+  },
+
+  /**
    * Register a new user
    * @param {Object} userData - User registration data
    * @param {string} userData.name - User's full name
@@ -206,12 +240,33 @@ export const authAPI = {
    * @returns {Promise<User>} Created user data
    */
   register: async ({ name, badgeId, password, email }) => {
-    return api.post('/api/auth/register', {
-      name,
-      badge_id: badgeId,  // Backend expects snake_case
-      password,
-      email: email || undefined, // Only include email if it exists
+    const requestData = {
+      name: name?.trim() || '',
+      badgeId: badgeId?.trim() || '',
+      password: password || '',
+      ...(email ? { email: email.trim() } : {}),
+    };
+
+    console.log('Submitting registration', {
+      ...requestData,
+      password: '***redacted***',
     });
+
+    try {
+      const response = await api.post('/api/auth/register', requestData);
+      console.log('Registration successful', response.data);
+      return response.data || response;
+    } catch (error) {
+      console.error('Registration request failed', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+      });
+      throw new Error(
+        (error.response?.data && error.response.data.detail) ||
+          'Registration failed. Please try again.'
+      );
+    }
   },
 
   /**
