@@ -68,6 +68,7 @@ const DoctorDashboard = () => {
     }
   }, [location]);
 
+
   useEffect(() => {
     const fetchDoctorData = async () => {
       try {
@@ -77,19 +78,55 @@ const DoctorDashboard = () => {
           return;
         }
 
-        setDoctorData({
-          name: localStorage.getItem('userName') || 'Dr. Smith',
-          specialty: 'Endocrinologist',
-          patientsCount: 42,
-          yearsOfExperience: 8,
-          email: 'dr.smith@example.com'
-        });
+        // Fetch real doctor data from API
+        try {
+          const doctorInfo = await authAPI.getCurrentUser();
+          setDoctorData({
+            name: doctorInfo.name || localStorage.getItem('userName') || 'Doctor',
+            specialty: doctorInfo.specialty || 'Endocrinologist',
+            email: doctorInfo.email || 'doctor@smartdiab.com',
+            badgeId: doctorInfo.badge_id || localStorage.getItem('userBadgeId')
+          });
+        } catch (err) {
+          console.error('Error fetching doctor info:', err);
+          // Fallback to localStorage
+          setDoctorData({
+            name: localStorage.getItem('userName') || 'Doctor',
+            specialty: 'Endocrinologist',
+            email: 'doctor@smartdiab.com',
+            badgeId: localStorage.getItem('userBadgeId')
+          });
+        }
 
-        setRecentPatients([
-          { id: 1, name: 'John Doe', lastVisit: '2023-11-10', status: 'Stable', nextAppointment: '2023-11-20' },
-          { id: 2, name: 'Jane Smith', lastVisit: '2023-11-09', status: 'Improving', nextAppointment: '2023-11-18' },
-          { id: 3, name: 'Robert Johnson', lastVisit: '2023-11-08', status: 'Critical', nextAppointment: '2023-11-15' },
-        ]);
+        // Fetch real patients data
+        try {
+          const patientsData = await patientService.listPatients();
+          const patientCount = patientsData.length;
+
+          // Get recent patients (last 3)
+          const recentPatientsData = patientsData
+            .slice(0, 3)
+            .map(patient => ({
+              id: patient.id,
+              name: patient.name,
+              email: patient.email,
+              age: patient.age,
+              gender: patient.gender,
+              lastVisit: patient.updated_at || patient.created_at || 'N/A',
+              status: patient.general_state || 'Stable'
+            }));
+
+          setRecentPatients(recentPatientsData);
+
+          // Update doctor data with patient count
+          setDoctorData(prev => ({
+            ...prev,
+            patientsCount: patientCount
+          }));
+        } catch (err) {
+          console.error('Error fetching patients:', err);
+          setRecentPatients([]);
+        }
 
       } catch (error) {
         console.error('Error fetching doctor data:', error);
@@ -316,10 +353,10 @@ const DoctorDashboard = () => {
                   <strong>Total Patients:</strong> {doctorData?.patientsCount || 0}
                 </Typography>
                 <Typography variant="body2" color="textSecondary">
-                  <strong>Experience:</strong> {doctorData?.yearsOfExperience || 0} years
+                  <strong>Badge ID:</strong> {doctorData?.badgeId || 'N/A'}
                 </Typography>
                 <Typography variant="body2" color="textSecondary">
-                  <strong>Next Appointment:</strong> Today, 2:30 PM
+                  <strong>Recent Patients:</strong> {recentPatients.length}
                 </Typography>
               </Box>
             </Paper>
@@ -332,10 +369,10 @@ const DoctorDashboard = () => {
                 {/* Welcome Card */}
                 <Paper sx={{ p: 3, mb: 3, bgcolor: 'primary.main', color: 'white' }}>
                   <Typography variant="h5" gutterBottom>
-                    Welcome back, Dr. {doctorData?.name?.split(' ')[1] || ''}!
+                    Welcome back, {doctorData?.name || 'Doctor'}!
                   </Typography>
                   <Typography variant="body1">
-                    You have 3 appointments today and 5 pending tasks.
+                    You have {recentPatients.length} recent patients. Manage your practice efficiently.
                   </Typography>
                 </Paper>
 
@@ -343,39 +380,58 @@ const DoctorDashboard = () => {
                 <Paper sx={{ p: 3, mb: 3 }}>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                     <Typography variant="h6">Recent Patients</Typography>
-                    <Button color="primary" onClick={() => navigate('/patients')}>
+                    <Button color="primary" onClick={() => navigate('/dashboard/patients')}>
                       View All
                     </Button>
                   </Box>
 
-                  <List>
-                    {recentPatients.map((patient, index) => (
-                      <React.Fragment key={patient.id}>
-                        <ListItem
-                          button
-                          sx={{ '&:hover': { backgroundColor: 'action.hover' } }}
-                          onClick={() => navigate(`/patient/${patient.id}`)}
-                        >
-                          <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
-                            {patient.name.charAt(0)}
-                          </Avatar>
-                          <ListItemText
-                            primary={patient.name}
-                            secondary={`Last visit: ${patient.lastVisit} • Status: ${patient.status}`}
-                          />
-                          <Box textAlign="right">
-                            <Typography variant="caption" display="block" color="textSecondary">
-                              Next Appointment
-                            </Typography>
-                            <Typography variant="body2">
-                              {patient.nextAppointment}
-                            </Typography>
-                          </Box>
-                        </ListItem>
-                        {index < recentPatients.length - 1 && <Divider variant="inset" component="li" />}
-                      </React.Fragment>
-                    ))}
-                  </List>
+                  {recentPatients.length === 0 ? (
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <Typography variant="body1" color="text.secondary">
+                        No patients yet. Add your first patient to get started.
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        sx={{ mt: 2 }}
+                        onClick={() => navigate('/dashboard/patients')}
+                      >
+                        Add Patient
+                      </Button>
+                    </Box>
+                  ) : (
+                    <List>
+                      {recentPatients.map((patient, index) => (
+                        <React.Fragment key={patient.id}>
+                          <ListItem
+                            button
+                            sx={{ '&:hover': { backgroundColor: 'action.hover' } }}
+                            onClick={() => navigate(`/dashboard/patients/${patient.id}`)}
+                          >
+                            <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                              {patient.name.charAt(0)}
+                            </Avatar>
+                            <ListItemText
+                              primary={patient.name}
+                              secondary={`${patient.email || 'No email'} • ${patient.age ? `Age: ${patient.age}` : 'Age: N/A'} • ${patient.gender || 'Gender: N/A'}`}
+                            />
+                            <Box textAlign="right">
+                              <Typography variant="caption" display="block" color="textSecondary">
+                                Status
+                              </Typography>
+                              <Typography variant="body2" color={
+                                patient.status === 'Critical' ? 'error' :
+                                  patient.status === 'Under Observation' ? 'warning.main' :
+                                    'success.main'
+                              }>
+                                {patient.status}
+                              </Typography>
+                            </Box>
+                          </ListItem>
+                          {index < recentPatients.length - 1 && <Divider variant="inset" component="li" />}
+                        </React.Fragment>
+                      ))}
+                    </List>
+                  )}
                 </Paper>
 
                 {/* Quick Actions */}

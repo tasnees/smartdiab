@@ -25,6 +25,7 @@ const Auth = ({ isLogin: initialIsLogin }) => {
     rememberMe: false
   });
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -32,6 +33,13 @@ const Auth = ({ isLogin: initialIsLogin }) => {
   const from = location.state?.from?.pathname || '/dashboard';
 
   useEffect(() => {
+    // Check for success message from signup redirect
+    if (location.state?.message) {
+      setSuccessMessage(location.state.message);
+      // Clear the message from location state
+      window.history.replaceState({}, document.title);
+    }
+
     // Reset form when switching between login/signup
     setFormData(prev => ({
       ...prev,
@@ -40,7 +48,7 @@ const Auth = ({ isLogin: initialIsLogin }) => {
       password: ''
     }));
     setError(authError || '');
-  }, [isLogin, authError]);
+  }, [isLogin, authError, location.state]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -92,11 +100,14 @@ const Auth = ({ isLogin: initialIsLogin }) => {
         const success = await register(userData);
 
         if (success) {
-          navigate(from, { replace: true });
+          // Redirect to login page after successful registration
+          navigate('/login', {
+            replace: true,
+            state: {
+              message: 'Account created successfully! Please login with your credentials.'
+            }
+          });
         }
-
-        // Redirect to home after registration
-        navigate('/');
       }
     } catch (err) {
       setError(err.message || (isLogin
@@ -122,9 +133,24 @@ const Auth = ({ isLogin: initialIsLogin }) => {
           {isLogin ? 'Welcome Back' : 'Create an Account'}
         </Typography>
 
+        {successMessage && (
+          <Alert
+            severity="success"
+            onClose={() => setSuccessMessage('')}
+            sx={{
+              width: '100%',
+              mb: 2,
+              '& .MuiAlert-message': { width: '100%' }
+            }}
+          >
+            {successMessage}
+          </Alert>
+        )}
+
         {error && (
           <Alert
             severity="error"
+            onClose={() => setError('')}
             sx={{
               width: '100%',
               mb: 2,

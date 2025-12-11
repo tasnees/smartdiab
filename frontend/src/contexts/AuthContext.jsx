@@ -44,13 +44,13 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       const response = await authAPI.login(badgeId, password);
       console.log('Login response:', response);
-      
+
       if (!response || !response.access_token) {
         throw new Error('Invalid response from server');
       }
-      
+
       localStorage.setItem('authToken', response.access_token);
-      
+
       // Set user data from response or fetch it if not included
       let userData;
       if (response.user) {
@@ -61,12 +61,12 @@ export const AuthProvider = ({ children }) => {
         userData = await authAPI.getCurrentUser();
         setUser(userData);
       }
-      
+
       // Store doctor's ID in localStorage for API requests
       if (userData && userData.badge_id) {
         localStorage.setItem('doctorId', userData.badge_id);
       }
-      
+
       navigate('/dashboard');
       return true;
     } catch (err) {
@@ -83,7 +83,9 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       setError(null);
       await authAPI.register(userData);
-      return await login(userData.badgeId, userData.password);
+      // Don't auto-login after registration
+      // Let the user manually login from the login page
+      return true;
     } catch (err) {
       setError(err.message || 'Registration failed');
       return false;
