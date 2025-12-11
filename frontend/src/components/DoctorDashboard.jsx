@@ -102,10 +102,17 @@ const DoctorDashboard = () => {
   }, [navigate]);
 
   const handleLogout = () => {
+    // Clear all authentication data
     localStorage.removeItem('authToken');
     localStorage.removeItem('userName');
     localStorage.removeItem('userBadgeId');
-    navigate('/login');
+    localStorage.removeItem('doctorId');
+
+    // Clear session storage
+    sessionStorage.clear();
+
+    // Force page reload to login
+    window.location.href = '/login';
   };
 
   const loadPatients = async () => {
