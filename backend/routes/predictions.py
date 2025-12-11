@@ -211,13 +211,77 @@ async def create_prediction(
                 detail=error_msg
             )
         
+        # Calculate prediction based on input data
+        # Simple rule-based model (can be replaced with ML model later)
+        risk_score = 0
+        confidence_score = 0.0
+        
+        # Age risk (higher age = higher risk)
+        age = input_data.get('age', 0)
+        if age > 60:
+            risk_score += 3
+        elif age > 45:
+            risk_score += 2
+        elif age > 30:
+            risk_score += 1
+            
+        # BMI risk
+        bmi = input_data.get('bmi', 0)
+        if bmi > 30:
+            risk_score += 3
+        elif bmi > 25:
+            risk_score += 2
+        elif bmi > 23:
+            risk_score += 1
+            
+        # HbA1c risk (diabetes indicator)
+        hba1c = input_data.get('HbA1c_level', 0)
+        if hba1c >= 6.5:
+            risk_score += 4  # Very high risk
+        elif hba1c >= 5.7:
+            risk_score += 3  # Pre-diabetic range
+        elif hba1c >= 5.0:
+            risk_score += 1
+            
+        # Blood glucose risk
+        glucose = input_data.get('blood_glucose_level', 0)
+        if glucose >= 200:
+            risk_score += 4
+        elif glucose >= 140:
+            risk_score += 3
+        elif glucose >= 100:
+            risk_score += 2
+            
+        # Hypertension
+        if input_data.get('hypertension', 0) == 1:
+            risk_score += 2
+            
+        # Heart disease
+        if input_data.get('heart_disease', 0) == 1:
+            risk_score += 2
+            
+        # Smoking history
+        if input_data.get('smoking_history', 0) == 1:
+            risk_score += 1
+            
+        # Determine prediction (0 = low risk, 1 = high risk)
+        # Threshold: if risk_score >= 8, high risk
+        prediction_result = 1 if risk_score >= 8 else 0
+        
+        # Calculate confidence (0.0 to 1.0)
+        # Higher risk score = higher confidence
+        max_possible_score = 19  # Maximum possible risk score
+        confidence_score = min(0.95, max(0.55, (risk_score / max_possible_score) + 0.5))
+        
+        print(f"Risk score: {risk_score}, Prediction: {prediction_result}, Confidence: {confidence_score:.2f}")
+        
         # Prepare the document to insert
         prediction_doc = {
             "patient_id": prediction_data['patient_id'],
             "doctor_id": doctor_id,
             "input_data": input_data,
-            "prediction": prediction_data.get('prediction'),
-            "confidence": prediction_data.get('confidence'),
+            "prediction": prediction_result,  # Use calculated prediction
+            "confidence": round(confidence_score, 2),  # Use calculated confidence
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
