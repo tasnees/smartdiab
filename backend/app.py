@@ -104,7 +104,10 @@ def init_database():
 mongo_db = init_database()
 
 # Add the backend directory to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(current_dir)
+sys.path.append(parent_dir)
 
 # Import routes after db is initialized
 if mongo_db is None:
@@ -116,27 +119,45 @@ if mongo_db is None:
 try:
     from routes import patients, predictions
     import auth
+    
+    logger.info("Successfully imported routes modules")
+    logger.info(f"Auth router defined: {auth.router}")
 except Exception as e:
-    logger.error(f"Error importing routes: {str(e)}")
+    logger.error(f"Error importing routes: {str(e)}", exc_info=True)
     raise
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ALLOWED_ORIGINS = {
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+}
+
 # Create middleware for CORS
 async def cors_middleware(request: Request, call_next):
+    origin = request.headers.get("origin")
+    allow_origin = origin if origin in ALLOWED_ORIGINS else None
+
     # Handle preflight requests
     if request.method == "OPTIONS":
+        headers = {
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Cache-Control, X-Requested-With",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "86400",
+            "Vary": "Origin",
+        }
+        if allow_origin:
+            headers["Access-Control-Allow-Origin"] = allow_origin
+        else:
+            headers["Access-Control-Allow-Origin"] = "http://localhost:3000"
         response = Response(
             status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": "http://localhost:3000",
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization, Cache-Control, X-Requested-With",
-                "Access-Control-Allow-Credentials": "true",
-                "Access-Control-Max-Age": "86400",
-            }
+            headers=headers
         )
         return response
     
@@ -144,11 +165,15 @@ async def cors_middleware(request: Request, call_next):
         response = await call_next(request)
         
         # Add CORS headers to all responses
-        response.headers["Access-Control-Allow-Origin"] = "http://localhost:3000"
+        if allow_origin:
+            response.headers["Access-Control-Allow-Origin"] = allow_origin
+        else:
+            response.headers.setdefault("Access-Control-Allow-Origin", "http://localhost:3000")
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Cache-Control, X-Requested-With"
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Expose-Headers"] = "*"
+        response.headers["Vary"] = "Origin"
         
         return response
     except Exception as e:
@@ -157,8 +182,9 @@ async def cors_middleware(request: Request, call_next):
             status_code=500,
             content={"detail": "Internal server error"},
             headers={
-                "Access-Control-Allow-Origin": "http://localhost:3000",
+                "Access-Control-Allow-Origin": allow_origin or "http://localhost:3000",
                 "Access-Control-Allow-Credentials": "true",
+                "Vary": "Origin",
             }
         )
 
@@ -168,7 +194,12 @@ app = FastAPI(
     middleware=[
         Middleware(
             CORSMiddleware,
-            allow_origins=["http://localhost:3000"],
+            allow_origins=[
+                "http://localhost:3000",
+                "http://localhost:5173",
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:5173",
+            ],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -188,9 +219,33 @@ app.include_router(predictions.router, prefix="/api/predictions", tags=["predict
 # Add logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    print(f"Incoming request: {request.method} {request.url}")
-    response = await call_next(request)
-    print(f"Response status: {response.status_code}")
+    body_bytes = await request.body()
+    # Allow downstream handlers to read the body again
+    request._body = body_bytes  # type: ignore[attr-defined]
+
+    logger.info("Incoming request", extra={
+        "method": request.method,
+        "url": str(request.url),
+        "headers": dict(request.headers),
+        "query_params": dict(request.query_params),
+        "path_params": request.path_params,
+        "body": body_bytes.decode("utf-8", errors="replace") if body_bytes else "<empty>"
+    })
+
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        logger.exception("Unhandled exception during request processing")
+        raise exc
+
+    logger.info(
+        "Outgoing response",
+        extra={
+            "status_code": response.status_code,
+            "headers": dict(response.headers)
+        }
+    )
+
     return response
 
 # Root endpoint

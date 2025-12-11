@@ -8,8 +8,10 @@ import './App.css';
 // Lazy load components for better performance
 const DoctorDashboard = React.lazy(() => import('./components/DoctorDashboard'));
 const DiabetesPrediction = React.lazy(() => import('./components/DiabetesPrediction'));
-const PatientManagement = React.lazy(() => import('./components/PatientManagement'));
+const Patients = React.lazy(() => import('./components/Patients'));
 const PatientDetail = React.lazy(() => import('./components/PatientDetail'));
+const Appointments = React.lazy(() => import('./components/Appointments'));
+const Reports = React.lazy(() => import('./components/Reports'));
 const Auth = React.lazy(() => import('./Auth'));
 
 // Loading component for Suspense fallback
@@ -39,7 +41,7 @@ const PrivateRoute = ({ children }) => {
 const AppContent = () => {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
-  
+
   // Redirect to dashboard if already authenticated and on auth pages
   const redirectPath = location.state?.from?.pathname || '/';
 
@@ -47,31 +49,31 @@ const AppContent = () => {
     <Suspense fallback={<LoadingFallback />}>
       <Routes>
         {/* Public Routes */}
-        <Route 
-          path="/login" 
+        <Route
+          path="/login"
           element={
             isAuthenticated ? (
               <Navigate to={redirectPath} replace />
             ) : (
               <Auth isLogin={true} />
             )
-          } 
+          }
         />
-        
-        <Route 
-          path="/signup" 
+
+        <Route
+          path="/signup"
           element={
             isAuthenticated ? (
               <Navigate to={redirectPath} replace />
             ) : (
               <Auth isLogin={false} />
             )
-          } 
+          }
         />
-        
+
         {/* Protected Routes */}
-        <Route 
-          path="/dashboard" 
+        <Route
+          path="/dashboard"
           element={
             <PrivateRoute>
               <DoctorDashboard />
@@ -79,46 +81,62 @@ const AppContent = () => {
           }
         >
           <Route index element={null} />
-          <Route 
-            path="diabetes-prediction" 
+          <Route
+            path="diabetes-prediction"
             element={
               <Box sx={{ width: '100%' }}>
                 <DiabetesPrediction />
               </Box>
-            } 
+            }
           />
-          <Route 
-            path="patients" 
+          <Route
+            path="patients"
             element={
               <Box sx={{ width: '100%' }}>
-                <PatientManagement />
+                <Patients />
               </Box>
-            } 
+            }
           />
-          <Route 
-            path="patients/:id" 
+          <Route
+            path="patients/:id"
             element={
               <Box sx={{ width: '100%' }}>
                 <PatientDetail />
               </Box>
-            } 
+            }
+          />
+          <Route
+            path="appointments"
+            element={
+              <Box sx={{ width: '100%' }}>
+                <Appointments />
+              </Box>
+            }
+          />
+          <Route
+            path="reports"
+            element={
+              <Box sx={{ width: '100%' }}>
+                <Reports />
+              </Box>
+            }
           />
         </Route>
-        
+
         {/* Redirect root to dashboard if authenticated, otherwise to login */}
-        <Route 
-          path="/" 
+        <Route
+          path="/"
           element={
             <Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />
-          } 
+          }
         />
-        
+
         {/* Catch all other routes */}
-        <Route 
-          path="*" 
+        <Route
+          path="*"
           element={
             <Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />
-          } 
+          }
         />
       </Routes>
     </Suspense>

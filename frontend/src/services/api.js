@@ -55,7 +55,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response) {
       const { status, data } = error.response;
-      
+
       // Handle specific status codes
       switch (status) {
         case 400:
@@ -98,13 +98,13 @@ export const authAPI = {
   login: async (badgeId, password) => {
     try {
       console.log('Attempting login with badgeId:', badgeId);
-      
+
       const formData = new URLSearchParams();
       formData.append('username', badgeId);
       formData.append('password', password);
-      
+
       console.log('Sending login request to /api/auth/token');
-      
+
       const response = await api.post('/api/auth/token', formData, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -113,24 +113,24 @@ export const authAPI = {
         timeout: 10000, // 10 seconds timeout
         validateStatus: (status) => status < 500, // Don't throw for 4xx errors
       });
-      
+
       console.log('Login response status:', response.status);
       console.log('Response data:', response.data);
-      
+
       if (response.status === 401) {
         throw new Error('Invalid credentials. Please check your badge ID and password.');
       }
-      
+
       if (!response.data) {
         console.error('No data in login response');
         throw new Error('No data received from server. Please try again.');
       }
-      
+
       if (!response.data.access_token) {
         console.error('No access token in response:', response.data);
         throw new Error('Authentication failed: No access token received');
       }
-      
+
       const result = {
         access_token: response.data.access_token,
         token_type: response.data.token_type || 'bearer',
@@ -140,14 +140,14 @@ export const authAPI = {
           email: ''
         }
       };
-      
+
       console.log('Login successful:', {
         hasToken: !!result.access_token,
         user: result.user
       });
-      
+
       return result;
-      
+
     } catch (error) {
       console.error('Login API error details:', {
         name: error.name,
@@ -166,12 +166,12 @@ export const authAPI = {
           data: error.config?.data
         }
       });
-      
+
       // Provide more specific error messages based on the error type
       if (error.code === 'ECONNABORTED') {
         throw new Error('Connection timeout. Please check your internet connection and try again.');
       }
-      
+
       if (error.response) {
         // Handle specific HTTP error statuses
         switch (error.response.status) {
@@ -225,7 +225,7 @@ export const authAPI = {
       });
       throw new Error(
         (error.response?.data && error.response.data.detail) ||
-          'Registration data is invalid. Please review your input.'
+        'Registration data is invalid. Please review your input.'
       );
     }
   },
@@ -264,7 +264,7 @@ export const authAPI = {
       });
       throw new Error(
         (error.response?.data && error.response.data.detail) ||
-          'Registration failed. Please try again.'
+        'Registration failed. Please try again.'
       );
     }
   },
@@ -326,12 +326,22 @@ export const patientService = {
   },
 
   /**
+   * Delete a patient
+   * @param {string} id - Patient ID
+   * @returns {Promise<Object>} Deletion confirmation
+   */
+  deletePatient: async (id) => {
+    const response = await api.delete(`/api/patients/${id}`);
+    return response.data || response;
+  },
+
+  /**
    * Get predictions for a patient
    * @param {string} patientId - Patient ID
    * @returns {Promise<Array>} List of predictions
    */
   getPatientPredictions: async (patientId) => {
-    const response = await api.get(`/api/patients/${patientId}/predictions/`);
+    const response = await api.get(`/api/predictions/patients/${patientId}/`);
     return response.data || response;
   },
 

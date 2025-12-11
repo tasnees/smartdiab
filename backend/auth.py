@@ -35,8 +35,43 @@ router = APIRouter()
 client = MongoClient(MONGO_URI)
 print("Successfully connected to MongoDB")
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing - using SHA-256 with salt as a workaround for bcrypt issues
+import hashlib
+import secrets
+
+def hash_password_simple(password: str) -> str:
+    """Simple password hashing using SHA-256 with salt"""
+    # Generate a random salt
+    salt = secrets.token_hex(16)
+    # Combine password and salt, then hash
+    password_salt = f"{password}{salt}"
+    hashed = hashlib.sha256(password_salt.encode()).hexdigest()
+    # Return salt:hash format
+    return f"{salt}:{hashed}"
+
+def verify_password_simple(plain_password: str, stored_hash: str) -> bool:
+    """Verify password against stored hash"""
+    try:
+        if ':' not in stored_hash:
+            # Old bcrypt format, can't verify
+            return False
+        salt, hashed = stored_hash.split(':', 1)
+        # Hash the provided password with the same salt
+        password_salt = f"{plain_password}{salt}"
+        computed_hash = hashlib.sha256(password_salt.encode()).hexdigest()
+        return computed_hash == hashed
+    except Exception as e:
+        print(f"Error verifying password: {e}")
+        return False
+
+# Fallback to bcrypt if available, otherwise use simple hashing
+try:
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    USE_BCRYPT = True
+except Exception as e:
+    print(f"⚠️ Bcrypt not available, using SHA-256 hashing: {e}")
+    USE_BCRYPT = False
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # Models
@@ -44,27 +79,42 @@ class DoctorBase(BaseModel):
     badge_id: str
     name: str
     hashed_password: str
+    email: Optional[EmailStr] = None
 
 class DoctorCreate(BaseModel):
-    badge_id: str = Field(None, min_length=3, max_length=50, alias='badgeId')
-    badgeId: str = Field(None, min_length=3, max_length=50, exclude=True)  # For frontend compatibility
+    badge_id: str = Field(..., min_length=3, max_length=50, alias='badgeId')
     name: str = Field(..., min_length=2, max_length=100)
-    password: str = Field(..., min_length=4, max_length=72, description="Password (4-72 characters)")
+    password: str = Field(..., min_length=8, max_length=72, 
+                         description="Password must be 8-72 characters")
+    email: Optional[EmailStr] = Field(default=None, description="Optional doctor email")
     
     @validator('password')
-    def validate_password_length(cls, v):
-        if len(v) < 4 or len(v) > 72:
-            raise ValueError('Password must be between 4 and 72 characters')
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if len(v) > 72:
+            raise ValueError('Password must be 72 characters or less')
+        # Check for common weak passwords
+        weak_passwords = ['password', '12345678', 'qwerty', 'letmein']
+        if v.lower() in weak_passwords:
+            raise ValueError('Password is too common or weak')
         return v
     
     class Config:
         allow_population_by_field_name = True
+        extra = 'forbid'  # Prevent extra fields
         
     def __init__(self, **data):
-        # Handle both badge_id and badgeId
+        # Handle both badge_id and badgeId for frontend compatibility
         if 'badgeId' in data and 'badge_id' not in data:
-            data['badge_id'] = data['badgeId']
+            data['badge_id'] = data.pop('badgeId')
         super().__init__(**data)
+        
+        # Clean name field
+        if hasattr(self, 'name'):
+            self.name = self.name.strip()
+        if hasattr(self, 'email') and self.email:
+            self.email = self.email.strip()
 
 class Token(BaseModel):
     access_token: str
@@ -87,24 +137,64 @@ def get_db():
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
+        if not USE_BCRYPT:
+            return verify_password_simple(plain_password, hashed_password)
         return pwd_context.verify(plain_password, hashed_password)
     except (ValueError, TypeError) as e:
         print(f"Password verification error: {e}")
-        return False
+        # Try simple verification as fallback
+        return verify_password_simple(plain_password, hashed_password)
 
 def get_password_hash(password: str):
     try:
         # Convert to string if bytes
         if isinstance(password, bytes):
             password = password.decode('utf-8')
-        # Hash using SHA-256 first to handle long passwords
-        import hashlib
-        if len(password) > 72:
-            password = hashlib.sha256(password.encode('utf-8')).hexdigest()
-        return pwd_context.hash(password)
-    except Exception as e:
-        print(f"Error hashing password: {str(e)}")
+            
+        # Validate password length
+        if len(password) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        
+        # Ensure password is not empty
+        if not password:
+            raise ValueError("Password cannot be empty")
+        
+        # Use simple hashing if bcrypt is not available
+        if not USE_BCRYPT:
+            print("Using SHA-256 hashing (bcrypt not available)")
+            return hash_password_simple(password)
+        
+        # Bcrypt has a 72 byte limit. Encode to bytes first to check actual byte length
+        password_bytes = password.encode('utf-8')
+        
+        # If password is too long in bytes, hash it first with SHA-256
+        if len(password_bytes) > 72:
+            import hashlib
+            password = hashlib.sha256(password_bytes).hexdigest()
+            password_bytes = password.encode('utf-8')
+        
+        # Truncate to 72 bytes if still too long (shouldn't happen after SHA-256, but just in case)
+        if len(password_bytes) > 72:
+            password_bytes = password_bytes[:72]
+            password = password_bytes.decode('utf-8', errors='ignore')
+        
+        # Try to hash the password using bcrypt
+        try:
+            hashed = pwd_context.hash(password)
+            if not hashed:
+                raise ValueError("Failed to hash password")
+            return hashed
+        except Exception as bcrypt_error:
+            # Fallback to simple hashing if bcrypt fails
+            print(f"⚠️ Bcrypt hashing failed, using SHA-256: {bcrypt_error}")
+            return hash_password_simple(password)
+        
+    except ValueError as ve:
+        print(f"❌ Password validation error: {str(ve)}")
         raise
+    except Exception as e:
+        print(f"❌ Error hashing password: {str(e)}")
+        raise ValueError(f"Password hashing failed: {str(e)}")
 
 def get_doctor(db, badge_id: str):
     doctor = db[DOCTORS_COLLECTION].find_one({"badge_id": badge_id})
@@ -246,96 +336,75 @@ def login_for_access_token(
             detail=f"An error occurred during login: {str(e)}"
         )
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post("/test-register", status_code=status.HTTP_200_OK)
+async def test_register(doctor: dict):
+    """Validate incoming registration payload without persisting."""
+    try:
+        doctor_model = DoctorCreate(**doctor)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc)
+        ) from exc
+
+    sanitized = doctor_model.dict(exclude={"password"}, by_alias=True)
+    sanitized["password"] = "***redacted***"
+
+    return {
+        "status": "success",
+        "message": "Registration data is valid",
+        "data": sanitized
+    }
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED, response_model=dict)
 async def register_doctor(doctor: DoctorCreate):
     print("\n=== Registration Debug ===")
-    print(f"Registration attempt for: {doctor.dict()}")
-    
+    print(f"Incoming registration data: {doctor.dict(exclude={'password'})}")
+
     try:
-        print(f"Received registration request for badge_id: {doctor.badge_id}")
-        print(f"Doctor data: {doctor.dict()}")
-        
         # Get database connection
-        try:
-            db = get_db()
-            print("✅ Successfully connected to database")
-            
-            # Test the connection by pinging the database
-            db.command('ping')
-            print("✅ Database ping successful")
-            
-        except Exception as db_err:
-            error_msg = f"Database connection error: {str(db_err)}"
-            print(f"❌ {error_msg}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=error_msg
-            )
+        db = get_db()
+        print("✅ Successfully connected to database")
+        
+        # Test the connection by pinging the database
+        db.command('ping')
+        print("✅ Database ping successful")
         
         # Check for existing doctor with same badge_id
-        try:
-            existing_doctor = db[DOCTORS_COLLECTION].find_one({
-                "badge_id": doctor.badge_id
-            })
-            
-            if existing_doctor:
-                error_msg = f"A doctor with badge ID '{doctor.badge_id}' already exists"
-                    
-                print(f"❌ {error_msg}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=error_msg
-                )
-                
-            print("✅ No duplicate badge_id found")
-        except Exception as check_err:
-            print(f"❌ Error checking for existing doctor: {str(check_err)}")
-            raise
-            
-        # Hash the password
-        try:
-            print("Hashing password...")
-            hashed_password = get_password_hash(doctor.password)
-            print("✅ Password hashed successfully")
-        except Exception as hash_err:
-            error_msg = f"Password hashing failed: {str(hash_err)}"
+        existing_doctor = db[DOCTORS_COLLECTION].find_one({"badge_id": doctor.badge_id})
+        if existing_doctor:
+            error_msg = f"A doctor with badge ID '{doctor.badge_id}' already exists"
             print(f"❌ {error_msg}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=error_msg
             )
+        
+        print("✅ No duplicate badge_id found")
+        
+        # Hash the password
+        print("Hashing password...")
+        hashed_password = get_password_hash(doctor.password)
+        print("✅ Password hashed successfully")
         
         # Prepare doctor document
-        try:
-            doctor_dict = doctor.dict()
-            # Clean and format data
-            doctor_dict["name"] = doctor_dict["name"].strip()
-            
-            # Add additional fields
-            doctor_dict["hashed_password"] = hashed_password
-            doctor_dict["created_at"] = datetime.utcnow()
-            doctor_dict["is_active"] = True
-            
-            # Remove the plain password from the document
-            doctor_dict.pop("password", None)
-            
-            print(f"✅ Prepared doctor document")
-            print(f"   Name: {doctor_dict['name']}")
-            print(f"   Badge ID: {doctor_dict['badge_id']}")
-            
-        except Exception as prep_err:
-            error_msg = f"Error preparing doctor document: {str(prep_err)}"
-            print(f"❌ {error_msg}")
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=error_msg
-            )
+        doctor_dict = {
+            "badge_id": doctor.badge_id,
+            "name": doctor.name.strip(),
+            "hashed_password": hashed_password,
+            "email": doctor.email,
+            "created_at": datetime.utcnow(),
+            "is_active": True
+        }
         
-        # Insert the new doctor
+        print(f"✅ Prepared doctor document")
+        print(f"   Name: {doctor_dict['name']}")
+        print(f"   Badge ID: {doctor_dict['badge_id']}")
+        
+        # Try to use transactions if supported (replica set), otherwise use simple insert
         try:
-            print("Inserting new doctor into database...")
-            
-            # Start a session for transaction support
+            # Attempt transaction-based insert (requires replica set)
             with db.client.start_session() as session:
                 with session.start_transaction():
                     # Insert the new doctor
@@ -345,79 +414,85 @@ async def register_doctor(doctor: DoctorCreate):
                     )
                     
                     if not result.inserted_id:
-                        raise Exception("No document was inserted")
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Failed to create doctor account"
+                        )
                     
-                    # Get the inserted document to verify
+                    # Verify the insertion
                     inserted = db[DOCTORS_COLLECTION].find_one(
                         {"_id": result.inserted_id},
                         session=session
                     )
                     
                     if not inserted:
-                        raise Exception("Failed to verify document insertion")
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Failed to verify doctor creation"
+                        )
                     
                     print(f"✅ Doctor successfully created with ID: {result.inserted_id}")
                     
                     # Commit the transaction
                     session.commit_transaction()
                     
-                    # Prepare the response
-                    return {
-                        "status": "success",
-                        "doctor_id": str(result.inserted_id),
-                        "message": "Doctor registered successfully",
-                        "data": {
-                            "name": inserted.get("name"),
-                            "badge_id": inserted.get("badge_id"),
-                            "created_at": inserted.get("created_at", datetime.utcnow()).isoformat()
-                        }
-                    }
-                    
-        except mongo_errors.DuplicateKeyError as dup_err:
-            error_msg = f"A doctor with this badge ID already exists: {str(dup_err)}"
-            print(f"❌ {error_msg}")
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=error_msg
-            )
+        except (mongo_errors.OperationFailure, mongo_errors.InvalidOperation) as tx_err:
+            # Transactions not supported (standalone MongoDB), use simple insert
+            print(f"⚠️ Transactions not supported, using simple insert: {str(tx_err)}")
             
-        except Exception as insert_err:
-            error_msg = f"Error inserting doctor: {str(insert_err)}"
-            print(f"❌ {error_msg}")
-            
-            # Rollback any open transactions
-            if 'session' in locals():
-                session.abort_transaction()
+            try:
+                result = db[DOCTORS_COLLECTION].insert_one(doctor_dict)
                 
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=error_msg
-            )
+                if not result.inserted_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to create doctor account"
+                    )
+                
+                # Verify the insertion
+                inserted = db[DOCTORS_COLLECTION].find_one({"_id": result.inserted_id})
+                
+                if not inserted:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to verify doctor creation"
+                    )
+                
+                print(f"✅ Doctor successfully created with ID: {result.inserted_id}")
+                
+            except mongo_errors.DuplicateKeyError:
+                error_msg = f"A doctor with this badge ID already exists"
+                print(f"❌ {error_msg}")
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=error_msg
+                )
         
-        # Get the inserted doctor to return
-        try:
-            new_doctor = db[DOCTORS_COLLECTION].find_one({"_id": result.inserted_id})
-            if not new_doctor:
-                raise Exception("Failed to retrieve created doctor")
-            new_doctor["id"] = str(new_doctor.pop("_id"))
-            print(f"✅ Successfully retrieved created doctor")
-        except Exception as fetch_err:
-            print(f"❌ Error fetching created doctor: {str(fetch_err)}")
-            # Don't fail the request if we can't return the created doctor
-            pass
+        # Generate access token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": doctor.badge_id},
+            expires_delta=access_token_expires
+        )
         
-        print(f"✅ Registration successful for badge_id: {doctor.badge_id}")
+        # Prepare the response
         return {
-            "status": "success", 
-            "doctor_id": str(result.inserted_id),
-            "message": "Doctor registered successfully"
+            "status": "success",
+            "message": "Doctor registered successfully",
+            "data": {
+                "id": str(inserted["_id"]),
+                "name": inserted["name"],
+                "badge_id": inserted["badge_id"],
+                "email": inserted.get("email"),
+                "created_at": inserted.get("created_at", datetime.utcnow()).isoformat()
+            },
+            "access_token": access_token,
+            "token_type": "bearer"
         }
-        
+    
     except HTTPException as http_exc:
-        # Re-raise HTTP exceptions as they are
-        print(f"❌ HTTP Exception during registration: {str(http_exc.detail)}")
+        print(f"❌ HTTP Exception during registration: {http_exc.detail}")
         raise http_exc
-        
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()

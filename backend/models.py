@@ -36,11 +36,26 @@ class DoctorBase(BaseModel):
 
 class PatientBase(BaseModel):
     name: str
-    age: int
-    gender: str
+    age: Optional[int] = None
+    gender: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    
+    # Medical Information
+    blood_type: Optional[str] = None
+    allergies: Optional[List[str]] = Field(default_factory=list)
+    current_medications: Optional[List[str]] = Field(default_factory=list)
+    medical_history: Optional[str] = None
+    family_history: Optional[str] = None
+    general_state: Optional[str] = None  # e.g., "Stable", "Critical", "Under Observation"
+    
+    # Vital Signs (latest)
+    height: Optional[float] = None  # in cm
+    weight: Optional[float] = None  # in kg
+    blood_pressure: Optional[str] = None  # e.g., "120/80"
+    
+    # Notes
     notes: Optional[str] = None
     doctor_id: Optional[str] = None  # Reference to the doctor's badge_id
 
@@ -113,6 +128,53 @@ class PredictionInDB(PredictionBase):
                     "smoking_history": "former"
                 },
                 "notes": "High risk patient, recommend lifestyle changes"
+            }
+        }
+    }
+
+class AppointmentBase(BaseModel):
+    patient_id: str
+    doctor_id: str
+    appointment_date: datetime
+    appointment_time: str  # Format: "HH:MM"
+    duration: int = 30  # Duration in minutes
+    reason: str
+    status: str = "Scheduled"  # Scheduled, Completed, Cancelled, No-Show
+    notes: Optional[str] = None
+    reminder_sent: bool = False
+
+class AppointmentCreate(AppointmentBase):
+    pass
+
+class AppointmentUpdate(BaseModel):
+    appointment_date: Optional[datetime] = None
+    appointment_time: Optional[str] = None
+    duration: Optional[int] = None
+    reason: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    reminder_sent: Optional[bool] = None
+
+class AppointmentInDB(AppointmentBase):
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    model_config = {
+        "populate_by_name": True,
+        "arbitrary_types_allowed": True,
+        "json_encoders": {ObjectId: str},
+        "json_schema_extra": {
+            "example": {
+                "patient_id": "507f1f77bcf86cd799439011",
+                "doctor_id": "doc123",
+                "appointment_date": "2024-01-15T00:00:00",
+                "appointment_time": "14:30",
+                "duration": 30,
+                "reason": "Diabetes checkup",
+                "status": "Scheduled",
+                "notes": "Follow-up appointment",
+                "reminder_sent": False
             }
         }
     }

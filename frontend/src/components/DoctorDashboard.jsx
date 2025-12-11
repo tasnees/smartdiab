@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
-import { 
-  Box, 
-  Typography, 
-  Container, 
-  Paper, 
-  Grid, 
-  Card, 
-  CardContent, 
+import {
+  Box,
+  Typography,
+  Container,
+  Paper,
+  Grid,
+  Card,
+  CardContent,
   Button,
   List,
   ListItem,
@@ -16,7 +16,14 @@ import {
   Divider,
   Avatar,
   IconButton,
-  Tooltip
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  MenuItem,
+  Alert
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -29,16 +36,22 @@ import {
   CalendarToday as CalendarIcon,
   MonitorHeart as MonitorHeartIcon
 } from '@mui/icons-material';
-import { authAPI } from '../services/api';
+import { authAPI, patientService } from '../services/api';
 
 const DoctorDashboard = () => {
   const [doctorData, setDoctorData] = useState(null);
   const [recentPatients, setRecentPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [prescriptionDialogOpen, setPrescriptionDialogOpen] = useState(false);
+  const [patients, setPatients] = useState([]);
+  const [selectedPatientId, setSelectedPatientId] = useState('');
+  const [medication, setMedication] = useState('');
+  const [prescriptionError, setPrescriptionError] = useState('');
+  const [prescriptionSuccess, setPrescriptionSuccess] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   // Update active tab based on URL
   useEffect(() => {
     const path = location.pathname;
@@ -64,8 +77,6 @@ const DoctorDashboard = () => {
           return;
         }
 
-        // In a real app, you would fetch the doctor's data from your API
-        // For now, we'll use mock data
         setDoctorData({
           name: localStorage.getItem('userName') || 'Dr. Smith',
           specialty: 'Endocrinologist',
@@ -74,7 +85,6 @@ const DoctorDashboard = () => {
           email: 'dr.smith@example.com'
         });
 
-        // Mock recent patients data
         setRecentPatients([
           { id: 1, name: 'John Doe', lastVisit: '2023-11-10', status: 'Stable', nextAppointment: '2023-11-20' },
           { id: 2, name: 'Jane Smith', lastVisit: '2023-11-09', status: 'Improving', nextAppointment: '2023-11-18' },
@@ -96,6 +106,59 @@ const DoctorDashboard = () => {
     localStorage.removeItem('userName');
     localStorage.removeItem('userBadgeId');
     navigate('/login');
+  };
+
+  const loadPatients = async () => {
+    try {
+      const data = await patientService.listPatients();
+      setPatients(data);
+    } catch (error) {
+      console.error('Error loading patients:', error);
+    }
+  };
+
+  const handleOpenPrescriptionDialog = () => {
+    loadPatients();
+    setPrescriptionDialogOpen(true);
+    setPrescriptionError('');
+    setPrescriptionSuccess('');
+  };
+
+  const handleClosePrescriptionDialog = () => {
+    setPrescriptionDialogOpen(false);
+    setSelectedPatientId('');
+    setMedication('');
+    setPrescriptionError('');
+    setPrescriptionSuccess('');
+  };
+
+  const handlePrescribe = async () => {
+    try {
+      setPrescriptionError('');
+      setPrescriptionSuccess('');
+
+      if (!selectedPatientId || !medication.trim()) {
+        setPrescriptionError('Please select a patient and enter medication');
+        return;
+      }
+
+      const patient = await patientService.getPatient(selectedPatientId);
+      const currentMeds = patient.current_medications || [];
+      const updatedMeds = [...currentMeds, medication.trim()];
+
+      await patientService.updatePatient(selectedPatientId, {
+        ...patient,
+        current_medications: updatedMeds
+      });
+
+      setPrescriptionSuccess('Prescription added successfully!');
+      setTimeout(() => {
+        handleClosePrescriptionDialog();
+      }, 1500);
+    } catch (error) {
+      console.error('Error adding prescription:', error);
+      setPrescriptionError('Failed to add prescription. Please try again.');
+    }
   };
 
   if (loading) {
@@ -124,9 +187,9 @@ const DoctorDashboard = () => {
                   <NotificationsIcon />
                 </IconButton>
               </Tooltip>
-              <Button 
-                color="inherit" 
-                startIcon={<LogoutIcon />} 
+              <Button
+                color="inherit"
+                startIcon={<LogoutIcon />}
                 onClick={handleLogout}
               >
                 Logout
@@ -142,10 +205,10 @@ const DoctorDashboard = () => {
           <Grid item xs={12} md={3}>
             <Paper sx={{ p: 2, mb: 3 }}>
               <Box display="flex" flexDirection="column" alignItems="center" p={2}>
-                <Avatar 
-                  sx={{ 
-                    width: 100, 
-                    height: 100, 
+                <Avatar
+                  sx={{
+                    width: 100,
+                    height: 100,
                     mb: 2,
                     bgcolor: 'primary.main',
                     fontSize: '2.5rem'
@@ -162,11 +225,11 @@ const DoctorDashboard = () => {
                 <Typography variant="body2" color="textSecondary" align="center">
                   {doctorData?.email}
                 </Typography>
-                
+
                 <Box mt={3} width="100%">
-                  <Button 
-                    variant="contained" 
-                    fullWidth 
+                  <Button
+                    variant="contained"
+                    fullWidth
                     startIcon={<AddIcon />}
                     onClick={() => navigate('/add-patient')}
                   >
@@ -174,12 +237,12 @@ const DoctorDashboard = () => {
                   </Button>
                 </Box>
               </Box>
-              
+
               <Divider sx={{ my: 2 }} />
-              
+
               <List component="nav">
-                <ListItem 
-                  button 
+                <ListItem
+                  button
                   selected={activeTab === 'dashboard'}
                   onClick={() => {
                     navigate('/dashboard');
@@ -189,8 +252,8 @@ const DoctorDashboard = () => {
                   <ListItemIcon><PersonIcon /></ListItemIcon>
                   <ListItemText primary="Dashboard" />
                 </ListItem>
-                <ListItem 
-                  button 
+                <ListItem
+                  button
                   selected={activeTab === 'diabetes'}
                   onClick={() => {
                     navigate('/dashboard/diabetes-prediction');
@@ -200,8 +263,8 @@ const DoctorDashboard = () => {
                   <ListItemIcon><MonitorHeartIcon /></ListItemIcon>
                   <ListItemText primary="Diabetes Prediction" />
                 </ListItem>
-                <ListItem 
-                  button 
+                <ListItem
+                  button
                   selected={activeTab === 'patients'}
                   onClick={() => {
                     navigate('/dashboard/patients');
@@ -211,8 +274,8 @@ const DoctorDashboard = () => {
                   <ListItemIcon><GroupIcon /></ListItemIcon>
                   <ListItemText primary="My Patients" />
                 </ListItem>
-                <ListItem 
-                  button 
+                <ListItem
+                  button
                   selected={activeTab === 'appointments'}
                   onClick={() => {
                     navigate('/dashboard/appointments');
@@ -222,8 +285,8 @@ const DoctorDashboard = () => {
                   <ListItemIcon><CalendarIcon /></ListItemIcon>
                   <ListItemText primary="Appointments" />
                 </ListItem>
-                <ListItem 
-                  button 
+                <ListItem
+                  button
                   selected={activeTab === 'reports'}
                   onClick={() => {
                     navigate('/dashboard/reports');
@@ -235,7 +298,7 @@ const DoctorDashboard = () => {
                 </ListItem>
               </List>
             </Paper>
-            
+
             {/* Quick Stats */}
             <Paper sx={{ p: 2 }}>
               <Typography variant="subtitle1" gutterBottom>
@@ -254,7 +317,7 @@ const DoctorDashboard = () => {
               </Box>
             </Paper>
           </Grid>
-          
+
           {/* Main Content */}
           <Grid item xs={12} md={9}>
             {location.pathname === '/dashboard' ? (
@@ -268,128 +331,128 @@ const DoctorDashboard = () => {
                     You have 3 appointments today and 5 pending tasks.
                   </Typography>
                 </Paper>
-                
+
                 {/* Recent Patients */}
                 <Paper sx={{ p: 3, mb: 3 }}>
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                <Typography variant="h6">Recent Patients</Typography>
-                <Button color="primary" onClick={() => navigate('/patients')}>
-                  View All
-                </Button>
-              </Box>
-              
-              <List>
-                {recentPatients.map((patient, index) => (
-                  <React.Fragment key={patient.id}>
-                    <ListItem 
-                      button 
-                      sx={{ '&:hover': { backgroundColor: 'action.hover' } }}
-                      onClick={() => navigate(`/patient/${patient.id}`)}
-                    >
-                      <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
-                        {patient.name.charAt(0)}
-                      </Avatar>
-                      <ListItemText 
-                        primary={patient.name} 
-                        secondary={`Last visit: ${patient.lastVisit} • Status: ${patient.status}`} 
-                      />
-                      <Box textAlign="right">
-                        <Typography variant="caption" display="block" color="textSecondary">
-                          Next Appointment
-                        </Typography>
-                        <Typography variant="body2">
-                          {patient.nextAppointment}
-                        </Typography>
-                      </Box>
-                    </ListItem>
-                    {index < recentPatients.length - 1 && <Divider variant="inset" component="li" />}
-                  </React.Fragment>
-                ))}
-              </List>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                    <Typography variant="h6">Recent Patients</Typography>
+                    <Button color="primary" onClick={() => navigate('/patients')}>
+                      View All
+                    </Button>
+                  </Box>
+
+                  <List>
+                    {recentPatients.map((patient, index) => (
+                      <React.Fragment key={patient.id}>
+                        <ListItem
+                          button
+                          sx={{ '&:hover': { backgroundColor: 'action.hover' } }}
+                          onClick={() => navigate(`/patient/${patient.id}`)}
+                        >
+                          <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                            {patient.name.charAt(0)}
+                          </Avatar>
+                          <ListItemText
+                            primary={patient.name}
+                            secondary={`Last visit: ${patient.lastVisit} • Status: ${patient.status}`}
+                          />
+                          <Box textAlign="right">
+                            <Typography variant="caption" display="block" color="textSecondary">
+                              Next Appointment
+                            </Typography>
+                            <Typography variant="body2">
+                              {patient.nextAppointment}
+                            </Typography>
+                          </Box>
+                        </ListItem>
+                        {index < recentPatients.length - 1 && <Divider variant="inset" component="li" />}
+                      </React.Fragment>
+                    ))}
+                  </List>
                 </Paper>
-                
+
                 {/* Quick Actions */}
                 <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <Card sx={{ height: '100%' }}>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Quick Actions
-                    </Typography>
-                    <Box mt={2}>
-                      <Button 
-                        variant="outlined" 
-                        fullWidth 
-                        sx={{ mb: 1, justifyContent: 'flex-start' }}
-                        onClick={() => navigate('/new-prescription')}
-                      >
-                        Write Prescription
-                      </Button>
-                      <Button 
-                        variant="outlined" 
-                        fullWidth 
-                        sx={{ mb: 1, justifyContent: 'flex-start' }}
-                        onClick={() => navigate('/schedule-appointment')}
-                      >
-                        Schedule Appointment
-                      </Button>
-                      <Button 
-                        variant="outlined" 
-                        fullWidth 
-                        sx={{ justifyContent: 'flex-start' }}
-                        onClick={() => navigate('/lab-results')}
-                      >
-                        View Lab Results
-                      </Button>
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-              
-              <Grid item xs={12} md={6}>
-                <Card sx={{ height: '100%' }}>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Today's Schedule
-                    </Typography>
-                    <List>
-                      <ListItem>
-                        <Box>
-                          <Typography variant="body2" color="textSecondary">
-                            09:00 AM
-                          </Typography>
-                          <Typography variant="body2">
-                            John Doe - Follow-up
-                          </Typography>
+                  <Grid item xs={12} md={6}>
+                    <Card sx={{ height: '100%' }}>
+                      <CardContent>
+                        <Typography variant="h6" gutterBottom>
+                          Quick Actions
+                        </Typography>
+                        <Box mt={2}>
+                          <Button
+                            variant="outlined"
+                            fullWidth
+                            sx={{ mb: 1, justifyContent: 'flex-start' }}
+                            onClick={handleOpenPrescriptionDialog}
+                          >
+                            Write Prescription
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            fullWidth
+                            sx={{ mb: 1, justifyContent: 'flex-start' }}
+                            onClick={() => navigate('/dashboard/appointments')}
+                          >
+                            Schedule Appointment
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            fullWidth
+                            sx={{ justifyContent: 'flex-start' }}
+                            onClick={() => navigate('/dashboard/reports')}
+                          >
+                            View Lab Results
+                          </Button>
                         </Box>
-                      </ListItem>
-                      <Divider />
-                      <ListItem>
-                        <Box>
-                          <Typography variant="body2" color="textSecondary">
-                            11:30 AM
-                          </Typography>
-                          <Typography variant="body2">
-                            Jane Smith - Initial Consultation
-                          </Typography>
-                        </Box>
-                      </ListItem>
-                      <Divider />
-                      <ListItem>
-                        <Box>
-                          <Typography variant="body2" color="textSecondary">
-                            03:15 PM
-                          </Typography>
-                          <Typography variant="body2">
-                            Team Meeting
-                          </Typography>
-                        </Box>
-                      </ListItem>
-                    </List>
-                  </CardContent>
-                </Card>
-                    </Grid>
+                      </CardContent>
+                    </Card>
                   </Grid>
+
+                  <Grid item xs={12} md={6}>
+                    <Card sx={{ height: '100%' }}>
+                      <CardContent>
+                        <Typography variant="h6" gutterBottom>
+                          Today's Schedule
+                        </Typography>
+                        <List>
+                          <ListItem>
+                            <Box>
+                              <Typography variant="body2" color="textSecondary">
+                                09:00 AM
+                              </Typography>
+                              <Typography variant="body2">
+                                John Doe - Follow-up
+                              </Typography>
+                            </Box>
+                          </ListItem>
+                          <Divider />
+                          <ListItem>
+                            <Box>
+                              <Typography variant="body2" color="textSecondary">
+                                11:30 AM
+                              </Typography>
+                              <Typography variant="body2">
+                                Jane Smith - Initial Consultation
+                              </Typography>
+                            </Box>
+                          </ListItem>
+                          <Divider />
+                          <ListItem>
+                            <Box>
+                              <Typography variant="body2" color="textSecondary">
+                                03:15 PM
+                              </Typography>
+                              <Typography variant="body2">
+                                Team Meeting
+                              </Typography>
+                            </Box>
+                          </ListItem>
+                        </List>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                </Grid>
               </>
             ) : (
               <Box sx={{ width: '100%' }}>
@@ -399,6 +462,90 @@ const DoctorDashboard = () => {
           </Grid>
         </Grid>
       </Container>
+
+      {/* Prescription Dialog */}
+      <Dialog
+        open={prescriptionDialogOpen}
+        onClose={handleClosePrescriptionDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Write Prescription</DialogTitle>
+        <DialogContent>
+          {prescriptionError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {prescriptionError}
+            </Alert>
+          )}
+          {prescriptionSuccess && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              {prescriptionSuccess}
+            </Alert>
+          )}
+
+          <TextField
+            select
+            fullWidth
+            label="Select Patient"
+            value={selectedPatientId}
+            onChange={(e) => setSelectedPatientId(e.target.value)}
+            margin="normal"
+            required
+          >
+            <MenuItem value="">Select a patient...</MenuItem>
+            {patients.map((patient) => (
+              <MenuItem key={patient.id} value={patient.id}>
+                {patient.name} - {patient.email}
+              </MenuItem>
+            ))}
+          </TextField>
+
+          {selectedPatientId && (
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Patient:</strong> {patients.find(p => p.id === selectedPatientId)?.name}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Current Medications:</strong>
+              </Typography>
+              <Box component="ul" sx={{ mt: 1, pl: 2 }}>
+                {(patients.find(p => p.id === selectedPatientId)?.current_medications || []).length > 0 ? (
+                  patients.find(p => p.id === selectedPatientId)?.current_medications.map((med, idx) => (
+                    <li key={idx}>
+                      <Typography variant="body2">{med}</Typography>
+                    </li>
+                  ))
+                ) : (
+                  <Typography variant="body2" color="text.secondary">No current medications</Typography>
+                )}
+              </Box>
+            </Box>
+          )}
+
+          <TextField
+            fullWidth
+            label="Medication"
+            value={medication}
+            onChange={(e) => setMedication(e.target.value)}
+            margin="normal"
+            placeholder="e.g., Metformin 500mg - Take twice daily"
+            required
+            multiline
+            rows={2}
+            helperText="Enter medication name, dosage, and instructions"
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleClosePrescriptionDialog}>Cancel</Button>
+          <Button
+            onClick={handlePrescribe}
+            variant="contained"
+            disabled={!selectedPatientId || !medication.trim()}
+          >
+            Add Prescription
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

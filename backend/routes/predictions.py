@@ -1,17 +1,47 @@
 import os
 from datetime import datetime
 from typing import List
+import pymongo
+from dotenv import load_dotenv
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from app import mongo_db  # Import the mongo_db instance from app.py
 import logging
+
+# Load environment variables
+load_dotenv()
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
+# Get MongoDB connection
+def get_db():
+    """Get database connection"""
+    try:
+        mongo_uri = os.getenv("MONGODB_URI")
+        if not mongo_uri:
+            logger.warning("MONGODB_URI not set, database operations will fail")
+            return None
+            
+        client = pymongo.MongoClient(
+            mongo_uri,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=30000,
+            socketTimeoutMS=30000,
+            retryWrites=True,
+            w='majority'
+        )
+        db_name = os.getenv("DB_NAME", "smartdiab")
+        db = client.get_database(db_name)
+        # Test connection
+        db.command('ping')
+        return db
+    except Exception as e:
+        logger.error(f"Failed to connect to database: {str(e)}")
+        return None
+
 # Get the database connection
-db = mongo_db
+db = get_db()
 
 # Function to check database connection
 def check_db_connection():
@@ -86,7 +116,7 @@ ensure_prediction_collection()
 
 import traceback
 
-@router.post("/", response_model=PredictionInDB)
+@router.post("/")
 async def create_prediction(
     prediction: PredictionCreate,
     current_doctor: DoctorBase = Depends(lambda: None),
@@ -107,7 +137,7 @@ async def create_prediction(
         print(f"Received prediction data: {prediction.dict()}")
         
         # Validate the database connection
-        if not db:
+        if db is None:
             error_msg = "Database connection is not available"
             logger.error(error_msg)
             raise HTTPException(
@@ -168,8 +198,9 @@ async def create_prediction(
             )
             
         # Validate required input fields
-        required_fields = ['pregnancies', 'glucose', 'blood_pressure', 'skin_thickness',
-                         'insulin', 'bmi', 'diabetes_pedigree', 'age']
+        # Updated to match the new diabetes dataset fields
+        required_fields = ['gender', 'age', 'hypertension', 'heart_disease',
+                         'bmi', 'HbA1c_level', 'blood_glucose_level', 'smoking_history']
         missing_fields = [field for field in required_fields if field not in input_data]
         
         if missing_fields:
@@ -215,8 +246,25 @@ async def create_prediction(
             # Convert ObjectId to string for the response
             inserted["id"] = str(inserted.pop("_id"))
             
+            # Convert datetime objects to ISO format strings for JSON serialization
+            if "created_at" in inserted:
+                inserted["created_at"] = inserted["created_at"].isoformat() if inserted["created_at"] else None
+            if "updated_at" in inserted:
+                inserted["updated_at"] = inserted["updated_at"].isoformat() if inserted["updated_at"] else None
+            
             print("Successfully created prediction:", inserted)
-            return inserted
+            
+            # Return a clean dict without any MongoDB-specific objects
+            return {
+                "id": inserted["id"],
+                "patient_id": inserted["patient_id"],
+                "doctor_id": inserted["doctor_id"],
+                "input_data": dict(inserted["input_data"]),  # Ensure it's a plain dict
+                "prediction": inserted.get("prediction"),
+                "confidence": inserted.get("confidence"),
+                "created_at": inserted.get("created_at"),
+                "updated_at": inserted.get("updated_at")
+            }
             
         except Exception as db_error:
             error_trace = traceback.format_exc()
@@ -253,14 +301,40 @@ async def get_patient_predictions(
     patient_id: str,
     current_doctor: DoctorBase = Depends(get_current_doctor)
 ):
+    """
+    Get all predictions for a specific patient.
+    """
     try:
+        print(f"Fetching predictions for patient: {patient_id}")
+        
+        # Find all predictions for this patient
         predictions = list(db.predictions.find({
-            "patient_id": patient_id,
-            "doctor_id": current_doctor.badge_id
-        }))
-        return [{"id": str(p["_id"])} | p for p in predictions]
+            "patient_id": patient_id
+        }).sort("created_at", -1))  # Sort by newest first
+        
+        print(f"Found {len(predictions)} predictions for patient {patient_id}")
+        
+        # Convert MongoDB documents to JSON-serializable dicts
+        result = []
+        for pred in predictions:
+            pred_dict = {
+                "id": str(pred["_id"]),
+                "patient_id": pred.get("patient_id"),
+                "doctor_id": pred.get("doctor_id"),
+                "prediction": pred.get("prediction"),
+                "confidence": pred.get("confidence"),
+                "input_data": pred.get("input_data", {}),
+                "created_at": pred.get("created_at").isoformat() if pred.get("created_at") else None,
+                "updated_at": pred.get("updated_at").isoformat() if pred.get("updated_at") else None
+            }
+            result.append(pred_dict)
+        
+        return result
+        
     except Exception as e:
         print(f"Error getting predictions: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving predictions: {str(e)}"

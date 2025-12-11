@@ -14,7 +14,7 @@ from datetime import timedelta
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import routers
-from routes import patients, predictions
+from routes import patients, predictions, appointments
 import auth
 
 app = FastAPI(title="Diabetes Prediction API")
@@ -23,6 +23,7 @@ app = FastAPI(title="Diabetes Prediction API")
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 app.include_router(patients.router, prefix="/api/patients", tags=["patients"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["predictions"])
+app.include_router(appointments.router, prefix="/api/appointments", tags=["appointments"])
 
 # Allow CORS for local frontend dev (change origins in prod)
 origins = [
@@ -37,9 +38,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Include authentication routes
-app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'diabetes_model.pkl')
 SCALER_PATH = os.path.join(os.path.dirname(__file__), '..', 'scaler.save')

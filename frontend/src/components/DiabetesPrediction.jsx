@@ -1,20 +1,22 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { patientService } from '../services/api';
-import { 
-  Box, 
-  Button, 
-  Card, 
-  CardContent, 
-  CircularProgress, 
-  FormControl, 
-  FormControlLabel, 
-  Grid, 
-  InputLabel, 
-  MenuItem, 
-  Paper, 
-  Select, 
-  Switch, 
-  TextField, 
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  CircularProgress,
+  Divider,
+  FormControl,
+  FormControlLabel,
+  Grid,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Switch,
+  TextField,
   Typography,
   Alert
 } from '@mui/material';
@@ -33,12 +35,34 @@ const defaultForm = {
 };
 
 const DiabetesPrediction = () => {
+  const location = useLocation();
   const [form, setForm] = useState(defaultForm);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [patients, setPatients] = useState([]);
+
+  // Load patient data from navigation state
+  useEffect(() => {
+    if (location.state?.patient) {
+      const patient = location.state.patient;
+      setSelectedPatient(patient);
+
+      // Auto-fill form with patient data
+      setForm({
+        gender: patient.gender || "Female",
+        age: patient.age || 30,
+        hypertension: patient.hypertension || 0,
+        heart_disease: patient.heart_disease || 0,
+        bmi: patient.bmi || patient.weight && patient.height ?
+          (patient.weight / Math.pow(patient.height / 100, 2)).toFixed(1) : 25.0,
+        HbA1c_level: patient.HbA1c_level || 5.5,
+        blood_glucose_level: patient.blood_glucose_level || 120,
+        smoking_history: patient.smoking_history || "never"
+      });
+    }
+  }, [location.state]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -61,7 +85,7 @@ const DiabetesPrediction = () => {
     setLoading(true);
     setError("");
     setResult(null);
-    
+
     try {
       const token = localStorage.getItem('authToken');
       if (!token) {
@@ -82,9 +106,9 @@ const DiabetesPrediction = () => {
 
       // Get the current doctor's ID from the token or local storage
       const doctorId = localStorage.getItem('doctorId') || 'system';
-      
+
       console.log('Using doctor ID:', doctorId);
-      
+
       // First, get the prediction from the model
       console.log('Sending prediction request to:', API_URL);
       const predictionData = {
@@ -95,17 +119,17 @@ const DiabetesPrediction = () => {
         input_data: inputData,
         notes: form.notes || ''
       };
-      
+
       console.log('Sending prediction data:', predictionData);
-      
+
       // Get the token from localStorage
       const authToken = localStorage.getItem('authToken');
       if (!authToken) {
         throw new Error('No authentication token found. Please log in again.');
       }
-      
+
       console.log('Using auth token:', authToken.substring(0, 10) + '...');
-      
+
       const predictionResponse = await fetch(API_URL, {
         method: 'POST',
         headers: {
@@ -130,7 +154,7 @@ const DiabetesPrediction = () => {
 
       const predictionResult = await predictionResponse.json();
       console.log('Prediction result:', predictionResult);
-      
+
       // Update the UI with the prediction result
       setResult({
         ...predictionResult,
@@ -158,7 +182,7 @@ const DiabetesPrediction = () => {
     };
     loadPatients();
   }, []);
-  
+
   const resetForm = () => {
     setForm(defaultForm);
     setResult(null);
@@ -170,7 +194,7 @@ const DiabetesPrediction = () => {
       <Typography variant="h5" gutterBottom>
         Diabetes Risk Assessment
       </Typography>
-      
+
       <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
         <form onSubmit={handleSubmit}>
           <Grid container spacing={3}>
@@ -179,7 +203,7 @@ const DiabetesPrediction = () => {
               <Typography variant="subtitle1" gutterBottom sx={{ color: 'primary.main' }}>
                 Patient Information
               </Typography>
-              
+
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>
                   <FormControl fullWidth margin="normal">
@@ -199,7 +223,7 @@ const DiabetesPrediction = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                
+
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
@@ -214,7 +238,7 @@ const DiabetesPrediction = () => {
                   />
                 </Grid>
               </Grid>
-              
+
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>
                   <FormControlLabel
@@ -234,7 +258,7 @@ const DiabetesPrediction = () => {
                     sx={{ mt: 2, ml: 0, width: '100%', justifyContent: 'space-between' }}
                   />
                 </Grid>
-                
+
                 <Grid item xs={12} sm={6}>
                   <FormControlLabel
                     control={
@@ -254,7 +278,7 @@ const DiabetesPrediction = () => {
                   />
                 </Grid>
               </Grid>
-              
+
               <FormControl fullWidth margin="normal">
                 <InputLabel id="smoking-label">Smoking History</InputLabel>
                 <Select
@@ -274,13 +298,13 @@ const DiabetesPrediction = () => {
                 </Select>
               </FormControl>
             </Grid>
-            
+
             {/* Medical Information */}
             <Grid item xs={12} md={6}>
               <Typography variant="subtitle1" gutterBottom sx={{ color: 'primary.main' }}>
                 Medical Information
               </Typography>
-              
+
               <TextField
                 fullWidth
                 margin="normal"
@@ -292,7 +316,7 @@ const DiabetesPrediction = () => {
                 inputProps={{ step: "0.1", min: 10, max: 60 }}
                 required
               />
-              
+
               <TextField
                 fullWidth
                 margin="normal"
@@ -304,7 +328,7 @@ const DiabetesPrediction = () => {
                 inputProps={{ step: "0.1", min: 3, max: 20 }}
                 required
               />
-              
+
               <TextField
                 fullWidth
                 margin="normal"
@@ -317,20 +341,20 @@ const DiabetesPrediction = () => {
                 required
               />
             </Grid>
-            
+
             {/* Form Actions */}
             <Grid item xs={12} sx={{ mt: 2 }}>
               <Box display="flex" justifyContent="space-between">
-                <Button 
-                  variant="outlined" 
+                <Button
+                  variant="outlined"
                   onClick={resetForm}
                   disabled={loading}
                 >
                   Reset
                 </Button>
-                <Button 
-                  type="button" 
-                  variant="contained" 
+                <Button
+                  type="button"
+                  variant="contained"
                   color="primary"
                   disabled={loading}
                   startIcon={loading ? <CircularProgress size={20} /> : null}
@@ -352,7 +376,7 @@ const DiabetesPrediction = () => {
           {error}
         </Alert>
       )}
-      
+
       {result && (
         <Card elevation={3} sx={{ mb: 3 }}>
           <CardContent>
@@ -360,7 +384,7 @@ const DiabetesPrediction = () => {
               Prediction Results
             </Typography>
             <Divider sx={{ mb: 2 }} />
-            
+
             <Grid container spacing={2}>
               <Grid item xs={12} md={6}>
                 <Box sx={{ p: 2, backgroundColor: result.prediction === 1 ? '#ffebee' : '#e8f5e9', borderRadius: 1 }}>
@@ -368,36 +392,41 @@ const DiabetesPrediction = () => {
                     {result.prediction === 1 ? 'High Risk' : 'Low Risk'}
                   </Typography>
                   <Typography variant="body1" align="center" sx={{ mt: 1 }}>
-                    {result.prediction === 1 
-                      ? 'This patient is at high risk of diabetes.' 
+                    {result.prediction === 1
+                      ? 'This patient is at high risk of diabetes.'
                       : 'This patient is at low risk of diabetes.'}
                   </Typography>
                 </Box>
               </Grid>
-              
+
               <Grid item xs={12} md={6}>
                 <Box sx={{ p: 2 }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Confidence: <strong>{result.confidence ? (result.confidence * 100).toFixed(2) + '%' : 'N/A'}</strong>
                   </Typography>
-                  
+
                   <Box sx={{ mt: 2 }}>
                     <Typography variant="body2" color="text.secondary">
-                      <strong>Recommendations:</strong>
+                      <strong>Clinical Recommendations for Doctor:</strong>
                     </Typography>
                     <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
                       {result.prediction === 1 ? (
                         <>
-                          <li>Schedule a follow-up appointment</li>
-                          <li>Recommend lifestyle changes</li>
-                          <li>Consider additional testing</li>
-                          <li>Monitor blood sugar levels regularly</li>
+                          <li><strong>Schedule follow-up appointment</strong> within 1-2 weeks</li>
+                          <li><strong>Order additional tests:</strong> Fasting glucose, HbA1c recheck, lipid panel</li>
+                          <li><strong>Prescribe lifestyle modifications:</strong> Diet plan, exercise regimen (30 min/day)</li>
+                          <li><strong>Consider medication:</strong> Evaluate for Metformin if pre-diabetic</li>
+                          <li><strong>Patient education:</strong> Discuss diabetes prevention strategies</li>
+                          <li><strong>Monitor closely:</strong> Weekly blood glucose checks for 1 month</li>
+                          <li><strong>Referral:</strong> Consider endocrinologist consultation if HbA1c {'>'}  6.5%</li>
                         </>
                       ) : (
                         <>
-                          <li>Maintain healthy lifestyle</li>
-                          <li>Regular check-ups recommended</li>
-                          <li>Monitor risk factors</li>
+                          <li><strong>Routine follow-up:</strong> Schedule annual diabetes screening</li>
+                          <li><strong>Preventive counseling:</strong> Maintain healthy weight and active lifestyle</li>
+                          <li><strong>Monitor risk factors:</strong> Track BMI, blood pressure, family history</li>
+                          <li><strong>Patient education:</strong> Discuss early warning signs of diabetes</li>
+                          <li><strong>Lifestyle reinforcement:</strong> Encourage continued healthy habits</li>
                         </>
                       )}
                     </ul>
@@ -405,10 +434,10 @@ const DiabetesPrediction = () => {
                 </Box>
               </Grid>
             </Grid>
-            
+
             <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-              <Button 
-                variant="outlined" 
+              <Button
+                variant="outlined"
                 onClick={() => {
                   // In a real app, you might save these results to a patient's record
                   alert('Results saved to patient record');

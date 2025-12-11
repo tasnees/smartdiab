@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { 
-  TextField, 
-  Button, 
-  Box, 
-  Typography, 
-  Paper, 
-  Container, 
-  Alert, 
+import {
+  TextField,
+  Button,
+  Box,
+  Typography,
+  Paper,
+  Container,
+  Alert,
   CircularProgress,
   FormControlLabel,
   Checkbox,
@@ -20,6 +20,7 @@ const Auth = ({ isLogin: initialIsLogin }) => {
   const [formData, setFormData] = useState({
     name: '',
     badgeId: '',
+    email: '',
     password: '',
     rememberMe: false
   });
@@ -54,7 +55,7 @@ const Auth = ({ isLogin: initialIsLogin }) => {
     setError('');
 
     // Basic validation
-    if (!formData.badgeId || !formData.password || (!isLogin && !formData.name)) {
+    if (!formData.badgeId || !formData.password || (!isLogin && (!formData.name || !formData.email))) {
       setError('Please fill in all required fields');
       return;
     }
@@ -68,7 +69,7 @@ const Auth = ({ isLogin: initialIsLogin }) => {
         if (success) {
           navigate(from, { replace: true });
         }
-        
+
         // Redirect to the requested page or home
         const redirectTo = location.state?.from?.pathname || '/';
         navigate(redirectTo);
@@ -80,25 +81,25 @@ const Auth = ({ isLogin: initialIsLogin }) => {
           password: formData.password,
           email: formData.email?.trim()
         };
-        
+
         // Validate required fields
-        if (!userData.name || !userData.badgeId || !userData.password) {
-          setError('Name, badge ID, and password are required');
+        if (!userData.name || !userData.badgeId || !userData.password || !userData.email) {
+          setError('Name, email, badge ID, and password are required');
           return;
         }
-        
+
         console.log('Registering with:', userData);
         const success = await register(userData);
-        
+
         if (success) {
           navigate(from, { replace: true });
         }
-        
+
         // Redirect to home after registration
         navigate('/');
       }
     } catch (err) {
-      setError(err.message || (isLogin 
+      setError(err.message || (isLogin
         ? 'Invalid badge ID or password. Please try again.'
         : 'Failed to create account. The badge ID might already be in use.'));
       console.error('Auth error:', err);
@@ -109,23 +110,23 @@ const Auth = ({ isLogin: initialIsLogin }) => {
 
   return (
     <Container component="main" maxWidth="xs">
-      <Paper elevation={3} sx={{ 
-        mt: 8, 
+      <Paper elevation={3} sx={{
+        mt: 8,
         p: { xs: 3, sm: 4 },
-        display: 'flex', 
-        flexDirection: 'column', 
+        display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         borderRadius: 2
       }}>
         <Typography component="h1" variant="h5" sx={{ mb: 3, fontWeight: 'bold' }}>
           {isLogin ? 'Welcome Back' : 'Create an Account'}
         </Typography>
-        
+
         {error && (
-          <Alert 
-            severity="error" 
-            sx={{ 
-              width: '100%', 
+          <Alert
+            severity="error"
+            sx={{
+              width: '100%',
               mb: 2,
               '& .MuiAlert-message': { width: '100%' }
             }}
@@ -150,7 +151,23 @@ const Auth = ({ isLogin: initialIsLogin }) => {
               sx={{ mb: 2 }}
             />
           )}
-          
+
+          {!isLogin && (
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="email"
+              label="Email Address"
+              name="email"
+              type="email"
+              autoComplete="email"
+              value={formData.email}
+              onChange={handleChange}
+              sx={{ mb: 2 }}
+            />
+          )}
+
           <TextField
             margin="normal"
             required
@@ -164,7 +181,7 @@ const Auth = ({ isLogin: initialIsLogin }) => {
             onChange={handleChange}
             sx={{ mb: 2 }}
           />
-          
+
           <TextField
             margin="normal"
             required
@@ -178,21 +195,21 @@ const Auth = ({ isLogin: initialIsLogin }) => {
             onChange={handleChange}
             sx={{ mb: 2 }}
           />
-          
+
           {isLogin && (
-            <Box sx={{ 
-              display: 'flex', 
+            <Box sx={{
+              display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               mb: 2
             }}>
               <FormControlLabel
                 control={
-                  <Checkbox 
-                    value="remember" 
+                  <Checkbox
+                    value="remember"
                     color="primary"
                     checked={formData.rememberMe}
-                    onChange={(e) => 
+                    onChange={(e) =>
                       setFormData(prev => ({
                         ...prev,
                         rememberMe: e.target.checked
@@ -202,9 +219,9 @@ const Auth = ({ isLogin: initialIsLogin }) => {
                 }
                 label="Remember me"
               />
-              <MuiLink 
-                component={Link} 
-                to="/forgot-password" 
+              <MuiLink
+                component={Link}
+                to="/forgot-password"
                 variant="body2"
                 sx={{ textDecoration: 'none' }}
               >
@@ -212,7 +229,7 @@ const Auth = ({ isLogin: initialIsLogin }) => {
               </MuiLink>
             </Box>
           )}
-          
+
           <Button
             type="submit"
             fullWidth
@@ -240,17 +257,17 @@ const Auth = ({ isLogin: initialIsLogin }) => {
               'Create Account'
             )}
           </Button>
-          
+
           <Box sx={{ textAlign: 'center', mb: 2 }}>
             <Typography variant="body2" color="text.secondary">
               {isLogin ? "Don't have an account?" : 'Already have an account?'}{' '}
-              <MuiLink 
-                component={Link} 
+              <MuiLink
+                component={Link}
                 to={isLogin ? '/signup' : '/login'}
                 state={{ from: location.state?.from }}
                 color="primary"
                 size="small"
-                sx={{ 
+                sx={{
                   textDecoration: 'none',
                   textTransform: 'none',
                   fontWeight: 600,
