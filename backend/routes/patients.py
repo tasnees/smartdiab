@@ -3,8 +3,6 @@ from typing import List
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
-from pymongo import MongoClient
-from typing import List
 
 # Import from parent directory
 import sys
@@ -13,10 +11,10 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from auth import get_current_doctor
 from models import PatientCreate, PatientInDB, DoctorBase
+from database import get_database
 
 router = APIRouter()
-client = MongoClient(os.getenv("MONGODB_URI"))
-db = client[os.getenv("DB_NAME", "smartdiab")]
+db = get_database()
 
 @router.post("/")
 async def create_patient(

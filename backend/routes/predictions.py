@@ -1,67 +1,17 @@
 import os
 from datetime import datetime
-from typing import List
-import pymongo
+from typing import List, Optional
+import logging
 from dotenv import load_dotenv
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-import logging
 
 # Load environment variables
 load_dotenv()
 
 # Set up logging
 logger = logging.getLogger(__name__)
-
-# Get MongoDB connection
-def get_db():
-    """Get database connection"""
-    try:
-        mongo_uri = os.getenv("MONGODB_URI")
-        if not mongo_uri:
-            logger.warning("MONGODB_URI not set, database operations will fail")
-            return None
-            
-        client = pymongo.MongoClient(
-            mongo_uri,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=30000,
-            socketTimeoutMS=30000,
-            retryWrites=True,
-            w='majority'
-        )
-        db_name = os.getenv("DB_NAME", "smartdiab")
-        db = client.get_database(db_name)
-        # Test connection
-        db.command('ping')
-        return db
-    except Exception as e:
-        logger.error(f"Failed to connect to database: {str(e)}")
-        return None
-
-# Get the database connection
-db = get_db()
-
-# Function to check database connection
-def check_db_connection():
-    if db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection is not available"
-        )
-    try:
-        # Test the connection
-        db.command('ping')
-        return True
-    except Exception as e:
-        logger.error(f"Database connection error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database connection error: {str(e)}"
-        )
-from typing import List, Optional
-from datetime import datetime
 
 # Import from parent directory
 import sys
@@ -70,49 +20,12 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from auth import get_current_doctor
 from models import PredictionCreate, PredictionInDB, DoctorBase
+from database import get_database
 
 router = APIRouter()
 
-# Ensure the predictions collection exists and has the correct indexes
-def ensure_prediction_collection():
-    try:
-        # Test the database connection by pinging it
-        db.command('ping')
-        
-        # Get collection names with error handling
-        try:
-            collection_names = db.list_collection_names()
-        except Exception as e:
-            print(f"Warning: Could not list collections: {str(e)}")
-            collection_names = []
-            
-        # Create collection if it doesn't exist
-        if 'predictions' not in collection_names:
-            try:
-                db.create_collection('predictions')
-                print("Created 'predictions' collection")
-            except Exception as e:
-                if 'already exists' not in str(e):
-                    raise
-                print("'predictions' collection already exists")
-        
-        # Create indexes if they don't exist
-        try:
-            db.predictions.create_index([("patient_id", 1)])
-            db.predictions.create_index([("doctor_id", 1)])
-            db.predictions.create_index([("created_at", -1)])
-            print("Ensured indexes on 'predictions' collection")
-        except Exception as e:
-            print(f"Warning: Could not create indexes: {str(e)}")
-            
-    except Exception as e:
-        error_msg = f"Error ensuring prediction collection: {str(e)}"
-        print(error_msg)
-        # Don't raise the exception to prevent the app from failing to start
-        # The actual database operations will fail gracefully later if needed
-
-# Call the function when the module is imported
-ensure_prediction_collection()
+# Get the database connection
+db = get_database()
 
 import traceback
 
@@ -122,8 +35,6 @@ async def create_prediction(
     current_doctor: DoctorBase = Depends(lambda: None),
     request: Request = None
 ):
-    # Check database connection first
-    check_db_connection()
     """
     Create a new prediction record.
     
@@ -135,15 +46,6 @@ async def create_prediction(
         print("\n=== New Prediction Request ===")
         print(f"Request Headers: {dict(request.headers) if request else 'No request object'}")
         print(f"Received prediction data: {prediction.dict()}")
-        
-        # Validate the database connection
-        if db is None:
-            error_msg = "Database connection is not available"
-            logger.error(error_msg)
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=error_msg
-            )
         
         # Convert prediction model to dict
         prediction_data = prediction.dict()
@@ -317,6 +219,32 @@ async def create_prediction(
                 inserted["updated_at"] = inserted["updated_at"].isoformat() if inserted["updated_at"] else None
             
             print("Successfully created prediction:", inserted)
+            
+            # Auto-create alert for high-risk predictions
+            if prediction_result == 1:  # High risk
+                # Determine risk level based on score
+                if risk_score >= 12:
+                    severity = "critical"
+                    risk_level = "VERY HIGH"
+                else:
+                    severity = "warning"
+                    risk_level = "HIGH"
+                
+                # Calculate risk percentage
+                risk_percentage = min(99, max(60, (risk_score / max_possible_score) * 100))
+                
+                alert = {
+                    "patient_id": prediction_data['patient_id'],
+                    "doctor_id": doctor_id,
+                    "alert_type": "high_risk_prediction",
+                    "severity": severity,
+                    "title": f"{risk_level} Diabetes Risk Detected",
+                    "message": f"Patient has been identified as {risk_level} RISK for diabetes (Risk Score: {risk_score}/19, {risk_percentage:.1f}%). Immediate attention recommended.",
+                    "acknowledged": False,
+                    "created_at": datetime.utcnow()
+                }
+                db.alerts.insert_one(alert)
+                print(f"Auto-created {severity} alert for high-risk prediction")
             
             # Return a clean dict without any MongoDB-specific objects
             return {

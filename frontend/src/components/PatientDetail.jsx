@@ -37,6 +37,12 @@ import {
 } from '@mui/icons-material';
 import { patientService } from '../services/api';
 
+// Import enhanced components
+import GlucoseMonitoring from './GlucoseMonitoring';
+import MedicationTracker from './MedicationTracker';
+import AlertsPanel from './AlertsPanel';
+import AdvancedAnalytics from './AdvancedAnalytics';
+
 const PatientDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -242,9 +248,13 @@ const PatientDetail = () => {
 
       {/* Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
+        <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} variant="scrollable" scrollButtons="auto">
           <Tab label="Overview" />
           <Tab label="Medical Records" />
+          <Tab label="Glucose & HbA1c" />
+          <Tab label="Medications" />
+          <Tab label="Alerts" />
+          <Tab label="Analytics" />
           <Tab label="Prediction History" />
         </Tabs>
       </Box>
@@ -425,7 +435,28 @@ const PatientDetail = () => {
         </Grid>
       )}
 
+      {/* Glucose & HbA1c Tab */}
       {tabValue === 2 && (
+        <GlucoseMonitoring patientId={id} />
+      )}
+
+      {/* Medications Tab */}
+      {tabValue === 3 && (
+        <MedicationTracker patientId={id} />
+      )}
+
+      {/* Alerts Tab */}
+      {tabValue === 4 && (
+        <AlertsPanel patientId={id} />
+      )}
+
+      {/* Analytics Tab */}
+      {tabValue === 5 && (
+        <AdvancedAnalytics patientId={id} mode="patient" />
+      )}
+
+      {/* Prediction History Tab */}
+      {tabValue === 6 && (
         <Card elevation={2}>
           <CardContent>
             <Typography variant="h6" gutterBottom color="primary">

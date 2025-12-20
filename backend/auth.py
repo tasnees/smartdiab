@@ -31,9 +31,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 # Initialize FastAPI router
 router = APIRouter()
 
-# MongoDB client setup
-client = MongoClient(MONGO_URI)
-print("Successfully connected to MongoDB")
+# MongoDB client setup - lazy initialization (don't connect at import time)
+client = None
 
 # Password hashing - using SHA-256 with salt as a workaround for bcrypt issues
 import hashlib
@@ -125,7 +124,14 @@ class TokenData(BaseModel):
 
 # Helper Functions
 def get_db():
+    global client
     try:
+        # Initialize client if not already done
+        if client is None:
+            print("Initializing MongoDB client...")
+            client = MongoClient(MONGO_URI)
+            print("Successfully connected to MongoDB")
+        
         db = client[DB_NAME]
         return db
     except Exception as e:
@@ -564,13 +570,9 @@ async def debug_list_doctors(limit: int = 10, skip: int = 0, db = Depends(get_db
         )
 
 @router.get("/test-db")
-async def test_db_connection():
+async def test_db_connection(db = Depends(get_db)):
     """Test endpoint to verify MongoDB connection and list collections"""
     try:
-        # Test MongoDB connection
-        client = MongoClient(MONGO_URI)
-        db = client[DB_NAME]
-        
         # List all collections
         collections = db.list_collection_names()
         
@@ -590,3 +592,4 @@ async def test_db_connection():
             status_code=500,
             detail=f"Error testing database: {str(e)}"
         )
+

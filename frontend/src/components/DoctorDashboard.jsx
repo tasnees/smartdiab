@@ -38,6 +38,10 @@ import {
 } from '@mui/icons-material';
 import { authAPI, patientService } from '../services/api';
 
+// Import enhanced components
+import AlertsPanel from './AlertsPanel';
+import AdvancedAnalytics from './AdvancedAnalytics';
+
 const DoctorDashboard = () => {
   const [doctorData, setDoctorData] = useState(null);
   const [recentPatients, setRecentPatients] = useState([]);
@@ -516,6 +520,16 @@ const DoctorDashboard = () => {
                     </Card>
                   </Grid>
                 </Grid>
+
+                {/* Alerts Section */}
+                <Box sx={{ mt: 3 }}>
+                  <AlertsPanel doctorId={doctorData?.badgeId} />
+                </Box>
+
+                {/* Population Health Analytics */}
+                <Box sx={{ mt: 3 }}>
+                  <AdvancedAnalytics doctorId={doctorData?.badgeId} mode="population" />
+                </Box>
               </>
             ) : (
               <Box sx={{ width: '100%' }}>

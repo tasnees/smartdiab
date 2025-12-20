@@ -1,32 +1,17 @@
 @echo off
 echo ========================================
-echo Starting Backend Server
+echo Starting Diabetes Prediction Backend
 echo ========================================
 echo.
 
-REM Change to the backend directory
-cd /d "%~dp0backend"
-
-echo Current directory: %CD%
-echo.
+cd backend
 
 echo Activating virtual environment...
 call ..\venv\Scripts\activate.bat
-if %errorlevel% neq 0 (
-    echo ERROR: Failed to activate virtual environment
-    pause
-    exit /b 1
-)
 
 echo.
-echo Starting Uvicorn server...
-echo Server will be available at: http://localhost:8000
-echo Press CTRL+C to stop the server
-echo.
-echo ========================================
+echo Starting Uvicorn server on http://localhost:8000
+echo Press Ctrl+C to stop the server
 echo.
 
-REM Run uvicorn from the backend directory
-python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-
-pause
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000

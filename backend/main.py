@@ -1,5 +1,10 @@
 import os
 import sys
+
+# CRITICAL: Import DNS configuration FIRST before any MongoDB/PyMongo imports
+# This configures DNS resolver timeouts to prevent 20+ second hangs
+import dns_config
+
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -9,26 +14,33 @@ import pandas as pd
 import joblib
 from typing import List, Optional
 from datetime import timedelta
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Add the backend directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Import database utilities
+from database import get_database, ensure_indexes, close_mongodb_connection
+
 # Import routers
 from routes import patients, predictions, appointments
+from routes import glucose, medications, lab_results, complications
+from routes import nutrition, activity, messages, alerts, analytics
 import auth
 
 app = FastAPI(title="Diabetes Prediction API")
 
-# Include routers
-app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
-app.include_router(patients.router, prefix="/api/patients", tags=["patients"])
-app.include_router(predictions.router, prefix="/api/predictions", tags=["predictions"])
-app.include_router(appointments.router, prefix="/api/appointments", tags=["appointments"])
-
+# IMPORTANT: Add CORS middleware BEFORE including routers
 # Allow CORS for local frontend dev (change origins in prod)
 origins = [
     "http://localhost:3000",
     "http://localhost:5173",  # Vite default port
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
 ]
 
 app.add_middleware(
@@ -38,6 +50,47 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Startup event to initialize database
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database connection and indexes on startup"""
+    try:
+        logger.info("Initializing database connection...")
+        db = get_database()
+        logger.info("Successfully connected to MongoDB")
+        
+        logger.info("Creating database indexes...")
+        ensure_indexes()
+        logger.info("Database initialization complete")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {str(e)}")
+        # Don't prevent startup - let individual routes handle connection errors
+        
+# Shutdown event to close database connection
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database connection on shutdown"""
+    logger.info("Shutting down application...")
+    close_mongodb_connection()
+    logger.info("Database connection closed")
+
+# Include routers - Original features
+app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
+app.include_router(patients.router, prefix="/api/patients", tags=["patients"])
+app.include_router(predictions.router, prefix="/api/predictions", tags=["predictions"])
+app.include_router(appointments.router, prefix="/api/appointments", tags=["appointments"])
+
+# Include routers - Enhanced features
+app.include_router(glucose.router, prefix="/api", tags=["glucose"])
+app.include_router(medications.router, prefix="/api", tags=["medications"])
+app.include_router(lab_results.router, prefix="/api", tags=["lab_results"])
+app.include_router(complications.router, prefix="/api", tags=["complications"])
+app.include_router(nutrition.router, prefix="/api", tags=["nutrition"])
+app.include_router(activity.router, prefix="/api", tags=["activity"])
+app.include_router(messages.router, prefix="/api", tags=["messages"])
+app.include_router(alerts.router, prefix="/api", tags=["alerts"])
+app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'diabetes_model.pkl')
 SCALER_PATH = os.path.join(os.path.dirname(__file__), '..', 'scaler.save')

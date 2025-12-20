@@ -6,12 +6,12 @@ import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
 
 // Lazy load components for better performance
-const DoctorDashboard = React.lazy(() => import('./components/DoctorDashboard'));
-const DiabetesPrediction = React.lazy(() => import('./components/DiabetesPrediction'));
-const Patients = React.lazy(() => import('./components/Patients'));
-const PatientDetail = React.lazy(() => import('./components/PatientDetail'));
-const Appointments = React.lazy(() => import('./components/Appointments'));
-const Reports = React.lazy(() => import('./components/Reports'));
+const DoctorDashboard = React.lazy(() => import('./components/DoctorDashboard.jsx'));
+const DiabetesPrediction = React.lazy(() => import('./components/DiabetesPrediction.jsx'));
+const Patients = React.lazy(() => import('./components/Patients.jsx'));
+const PatientDetail = React.lazy(() => import('./components/PatientDetail.jsx'));
+const Appointments = React.lazy(() => import('./components/Appointments.jsx'));
+const Reports = React.lazy(() => import('./components/Reports.jsx'));
 const Auth = React.lazy(() => import('./Auth'));
 
 // Loading component for Suspense fallback

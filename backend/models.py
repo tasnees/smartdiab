@@ -4,6 +4,9 @@ from datetime import datetime
 from bson import ObjectId
 from enum import Enum
 
+# Import all enhanced models
+from models_enhanced import *
+
 class PyObjectId(ObjectId):
     @classmethod
     def __get_validators__(cls):
