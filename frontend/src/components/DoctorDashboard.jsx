@@ -34,7 +34,8 @@ import {
   Logout as LogoutIcon,
   MedicalServices as MedicalServicesIcon,
   CalendarToday as CalendarIcon,
-  MonitorHeart as MonitorHeartIcon
+  MonitorHeart as MonitorHeartIcon,
+  DocumentScanner as ScanIcon
 } from '@mui/icons-material';
 import { authAPI, patientService } from '../services/api';
 
@@ -67,6 +68,8 @@ const DoctorDashboard = () => {
       setActiveTab('appointments');
     } else if (path.includes('/reports')) {
       setActiveTab('reports');
+    } else if (path.includes('/scan')) {
+      setActiveTab('scan');
     } else {
       setActiveTab('dashboard');
     }
@@ -343,6 +346,17 @@ const DoctorDashboard = () => {
                 >
                   <ListItemIcon><AssessmentIcon /></ListItemIcon>
                   <ListItemText primary="Reports" />
+                </ListItem>
+                <ListItem
+                  button
+                  selected={activeTab === 'scan'}
+                  onClick={() => {
+                    navigate('/dashboard/scan');
+                    setActiveTab('scan');
+                  }}
+                >
+                  <ListItemIcon><ScanIcon /></ListItemIcon>
+                  <ListItemText primary="AI Report Scanner" />
                 </ListItem>
               </List>
             </Paper>

@@ -29,8 +29,9 @@ from database import get_database, ensure_indexes, close_mongodb_connection
 # Import routers
 from routes import patients, predictions, appointments
 from routes import glucose, medications, lab_results, complications
-from routes import nutrition, activity, messages, alerts, analytics
+from routes import nutrition, activity, messages, alerts, analytics, scanning
 import auth
+from reminders_agent import start_agent_in_background
 
 app = FastAPI(title="Diabetes Prediction API")
 
@@ -63,6 +64,10 @@ async def startup_event():
         logger.info("Creating database indexes...")
         ensure_indexes()
         logger.info("Database initialization complete")
+        
+        # Start the WhatsApp Reminders Agent
+        start_agent_in_background()
+        logger.info("WhatsApp Reminders Agent started in background")
     except Exception as e:
         logger.error(f"Failed to initialize database: {str(e)}")
         # Don't prevent startup - let individual routes handle connection errors
@@ -91,6 +96,7 @@ app.include_router(activity.router, prefix="/api", tags=["activity"])
 app.include_router(messages.router, prefix="/api", tags=["messages"])
 app.include_router(alerts.router, prefix="/api", tags=["alerts"])
 app.include_router(analytics.router, prefix="/api", tags=["analytics"])
+app.include_router(scanning.router, prefix="/api", tags=["scanning"])
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'diabetes_model.pkl')
 SCALER_PATH = os.path.join(os.path.dirname(__file__), '..', 'scaler.save')

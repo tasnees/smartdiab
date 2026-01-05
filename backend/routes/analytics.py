@@ -128,15 +128,49 @@ def get_population_health(doctor_id: str):
             "acknowledged": False
         })
         
-        # Overdue screenings
+        # Enhanced Risk Assessment across population
+        risk_counts = {"high": 0, "moderate": 0, "low": 0}
         overdue_screenings = 0
         current_date = datetime.utcnow()
+        
         for patient_id in patients:
-            for screening in db.complication_screenings.find({
+            # 1. Count overdue screenings
+            overdue_screenings += db.complication_screenings.count_documents({
                 "patient_id": patient_id,
                 "next_screening_date": {"$lt": current_date}
-            }):
-                overdue_screenings += 1
+            })
+
+            # 2. Re-use logic from single patient stratification for consistency
+            patient_risk_score = 0
+            
+            # Check HbA1c
+            lh = db.hba1c_readings.find_one({"patient_id": patient_id}, sort=[("test_date", -1)])
+            if lh:
+                val = lh["hba1c_value"]
+                if val > 9.0: patient_risk_score += 3
+                elif val > 7.5: patient_risk_score += 2
+                elif val > 7.0: patient_risk_score += 1
+            
+            # Check latest AI prediction
+            lp = db.predictions.find_one({"patient_id": patient_id}, sort=[("created_at", -1)])
+            if lp and lp.get("prediction") == 1:
+                patient_risk_score += 4
+                
+            # Determine Level
+            if patient_risk_score >= 7: risk_counts["high"] += 1
+            elif patient_risk_score >= 4: risk_counts["moderate"] += 1
+            else: risk_counts["low"] += 1
+
+        # Calculate population percentages
+        pop_high_risk_percent = (risk_counts["high"] / total_patients * 100) if total_patients > 0 else 0
+                
+        # AI Prediction Statistics
+        total_predictions = db.predictions.count_documents({"doctor_id": doctor_id})
+        high_risk_predictions = db.predictions.count_documents({
+            "doctor_id": doctor_id, 
+            "prediction": 1
+        })
+        ai_risk_percentage = (high_risk_predictions / total_predictions * 100) if total_predictions > 0 else 0
         
         return {
             "doctor_id": doctor_id,
@@ -147,11 +181,22 @@ def get_population_health(doctor_id: str):
                 "percent_at_goal": round(percent_at_goal, 2),
                 "high_risk_count": high_risk_count
             },
+            "risk_stratification": {
+                "high": risk_counts["high"],
+                "moderate": risk_counts["moderate"],
+                "low": risk_counts["low"],
+                "high_risk_percentage": round(pop_high_risk_percent, 2)
+            },
             "alerts": {
                 "critical_unacknowledged": critical_alerts
             },
             "screenings": {
                 "overdue_count": overdue_screenings
+            },
+            "ai_metrics": {
+                "total_predictions": total_predictions,
+                "high_risk_count": high_risk_predictions,
+                "high_risk_percentage": round(ai_risk_percentage, 2)
             }
         }
     except Exception as e:
@@ -235,6 +280,20 @@ def get_risk_stratification(patient_id: str):
         if abnormal_screenings > 0:
             risk_score += 2
             risk_factors.append(f"{abnormal_screenings} abnormal complication screening(s)")
+            
+        # Check latest AI Prediction
+        latest_prediction = db.predictions.find_one(
+            {"patient_id": patient_id},
+            sort=[("created_at", -1)]
+        )
+        if latest_prediction:
+            if latest_prediction.get("prediction") == 1:
+                risk_score += 4 # AI detected high risk is a major factor
+                risk_factors.append(f"AI Model: High diabetes risk detected (confidence: {latest_prediction.get('confidence', 0)*100:.0f}%)")
+            elif latest_prediction.get("prediction") == 0 and latest_prediction.get("confidence", 0) > 0.9:
+                # If AI is very confident it's low risk, we could potentially lower the score
+                # but for safety in medical apps, we usually only add risk
+                pass
         
         # Determine risk level
         if risk_score >= 7:

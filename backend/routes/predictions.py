@@ -14,13 +14,10 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Import from parent directory
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
-
 from auth import get_current_doctor
 from models import PredictionCreate, PredictionInDB, DoctorBase
 from database import get_database
+from ml_utils import predict_diabetes
 
 router = APIRouter()
 
@@ -32,7 +29,7 @@ import traceback
 @router.post("/")
 async def create_prediction(
     prediction: PredictionCreate,
-    current_doctor: DoctorBase = Depends(lambda: None),
+    current_doctor: DoctorBase = Depends(get_current_doctor),
     request: Request = None
 ):
     """
@@ -113,69 +110,57 @@ async def create_prediction(
                 detail=error_msg
             )
         
-        # Calculate prediction based on input data
-        # Simple rule-based model (can be replaced with ML model later)
-        risk_score = 0
-        confidence_score = 0.0
+        # Try to use ML model for prediction
+        ml_pred, ml_conf, ml_error = predict_diabetes(input_data)
         
-        # Age risk (higher age = higher risk)
-        age = input_data.get('age', 0)
-        if age > 60:
-            risk_score += 3
-        elif age > 45:
-            risk_score += 2
-        elif age > 30:
-            risk_score += 1
+        if ml_pred is not None:
+            prediction_result = ml_pred
+            confidence_score = ml_conf
+            print(f"ML Prediction: {prediction_result}, Confidence: {confidence_score:.2f}")
+        else:
+            print(f"ML Prediction failed ({ml_error}), falling back to rule-based")
+            # Fallback to rule-based model
+            risk_score_internal = 0
             
-        # BMI risk
-        bmi = input_data.get('bmi', 0)
-        if bmi > 30:
-            risk_score += 3
-        elif bmi > 25:
-            risk_score += 2
-        elif bmi > 23:
-            risk_score += 1
-            
-        # HbA1c risk (diabetes indicator)
-        hba1c = input_data.get('HbA1c_level', 0)
-        if hba1c >= 6.5:
-            risk_score += 4  # Very high risk
-        elif hba1c >= 5.7:
-            risk_score += 3  # Pre-diabetic range
-        elif hba1c >= 5.0:
-            risk_score += 1
-            
-        # Blood glucose risk
-        glucose = input_data.get('blood_glucose_level', 0)
-        if glucose >= 200:
-            risk_score += 4
-        elif glucose >= 140:
-            risk_score += 3
-        elif glucose >= 100:
-            risk_score += 2
-            
-        # Hypertension
-        if input_data.get('hypertension', 0) == 1:
-            risk_score += 2
-            
-        # Heart disease
-        if input_data.get('heart_disease', 0) == 1:
-            risk_score += 2
-            
-        # Smoking history
-        if input_data.get('smoking_history', 0) == 1:
-            risk_score += 1
-            
-        # Determine prediction (0 = low risk, 1 = high risk)
-        # Threshold: if risk_score >= 8, high risk
-        prediction_result = 1 if risk_score >= 8 else 0
+            # Age risk
+            age = input_data.get('age', 0)
+            if age > 60: risk_score_internal += 3
+            elif age > 45: risk_score_internal += 2
+            elif age > 30: risk_score_internal += 1
+                
+            # BMI risk
+            bmi = input_data.get('bmi', 0)
+            if bmi > 30: risk_score_internal += 3
+            elif bmi > 25: risk_score_internal += 2
+            elif bmi > 23: risk_score_internal += 1
+                
+            # HbA1c risk
+            hba1c = input_data.get('HbA1c_level', 0)
+            if hba1c >= 6.5: risk_score_internal += 4
+            elif hba1c >= 5.7: risk_score_internal += 3
+            elif hba1c >= 5.0: risk_score_internal += 1
+                
+            # Blood glucose risk
+            glucose = input_data.get('blood_glucose_level', 0)
+            if glucose >= 200: risk_score_internal += 4
+            elif glucose >= 140: risk_score_internal += 3
+            elif glucose >= 100: risk_score_internal += 2
+                
+            if input_data.get('hypertension', 0) == 1: risk_score_internal += 2
+            if input_data.get('heart_disease', 0) == 1: risk_score_internal += 2
+            if input_data.get('smoking_history', 'never') != 'never': risk_score_internal += 1
+                
+            prediction_result = 1 if risk_score_internal >= 8 else 0
+            max_possible_score = 19
+            confidence_score = min(0.95, max(0.55, (risk_score_internal / max_possible_score) + 0.5))
+            risk_score = risk_score_internal # Use for alerts
         
-        # Calculate confidence (0.0 to 1.0)
-        # Higher risk score = higher confidence
-        max_possible_score = 19  # Maximum possible risk score
-        confidence_score = min(0.95, max(0.55, (risk_score / max_possible_score) + 0.5))
+        # Ensure risk_score is defined for alerts even if using ML
+        if ml_pred is not None:
+            # Recompute a rough risk score for alerts title if we used ML
+            risk_score = 12 if prediction_result == 1 else 4
         
-        print(f"Risk score: {risk_score}, Prediction: {prediction_result}, Confidence: {confidence_score:.2f}")
+        print(f"Final Prediction: {prediction_result}, Confidence: {confidence_score:.2f}")
         
         # Prepare the document to insert
         prediction_doc = {
@@ -286,6 +271,44 @@ async def create_prediction(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail
+        )
+@router.get("/")
+async def list_predictions(
+    current_doctor: DoctorBase = Depends(get_current_doctor)
+):
+    """
+    Get all predictions made by the current doctor.
+    """
+    try:
+        print(f"Listing all predictions for doctor: {current_doctor.badge_id}")
+        
+        # Find all predictions made by this doctor
+        predictions = list(db.predictions.find({
+            "doctor_id": current_doctor.badge_id
+        }).sort("created_at", -1))
+        
+        # Convert to clean dicts
+        result = []
+        for pred in predictions:
+            pred_dict = {
+                "id": str(pred["_id"]),
+                "patient_id": pred.get("patient_id"),
+                "doctor_id": pred.get("doctor_id"),
+                "prediction": pred.get("prediction"),
+                "confidence": pred.get("confidence"),
+                "input_data": pred.get("input_data", {}),
+                "created_at": pred.get("created_at").isoformat() if pred.get("created_at") else None,
+                "updated_at": pred.get("updated_at").isoformat() if pred.get("updated_at") else None
+            }
+            result.append(pred_dict)
+            
+        return result
+        
+    except Exception as e:
+        print(f"Error listing all predictions: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving predictions: {str(e)}"
         )
 
 @router.get("/patients/{patient_id}/")

@@ -3,14 +3,17 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response
-from pydantic import validator
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, validator, root_validator
 from pymongo import MongoClient, errors as mongo_errors
-from typing import Optional
 from datetime import datetime
+import bcrypt
+
+# Monkeypatch bcrypt to fix passlib incompatibility with newer bcrypt versions
+if not hasattr(bcrypt, "__about__"):
+    bcrypt.__about__ = type('About', (object,), {'__version__': bcrypt.__version__})
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -87,6 +90,17 @@ class DoctorCreate(BaseModel):
                          description="Password must be 8-72 characters")
     email: Optional[EmailStr] = Field(default=None, description="Optional doctor email")
     
+    class Config:
+        allow_population_by_field_name = True
+        extra = 'ignore'  # Ignore extra fields instead of failing
+        anystr_strip_whitespace = True
+
+    @root_validator(pre=True)
+    def handle_aliases(cls, values):
+        if 'badgeId' in values and 'badge_id' not in values:
+            values['badge_id'] = values.pop('badgeId')
+        return values
+
     @validator('password')
     def validate_password(cls, v):
         if len(v) < 8:
@@ -98,22 +112,6 @@ class DoctorCreate(BaseModel):
         if v.lower() in weak_passwords:
             raise ValueError('Password is too common or weak')
         return v
-    
-    class Config:
-        allow_population_by_field_name = True
-        extra = 'forbid'  # Prevent extra fields
-        
-    def __init__(self, **data):
-        # Handle both badge_id and badgeId for frontend compatibility
-        if 'badgeId' in data and 'badge_id' not in data:
-            data['badge_id'] = data.pop('badgeId')
-        super().__init__(**data)
-        
-        # Clean name field
-        if hasattr(self, 'name'):
-            self.name = self.name.strip()
-        if hasattr(self, 'email') and self.email:
-            self.email = self.email.strip()
 
 class Token(BaseModel):
     access_token: str
@@ -145,7 +143,15 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         if not USE_BCRYPT:
             return verify_password_simple(plain_password, hashed_password)
-        return pwd_context.verify(plain_password, hashed_password)
+            
+        # Handle 72-byte limit for bcrypt (match get_password_hash logic)
+        temp_password = plain_password
+        password_bytes = temp_password.encode('utf-8')
+        if len(password_bytes) > 72:
+            import hashlib
+            temp_password = hashlib.sha256(password_bytes).hexdigest()
+            
+        return pwd_context.verify(temp_password, hashed_password)
     except (ValueError, TypeError) as e:
         print(f"Password verification error: {e}")
         # Try simple verification as fallback

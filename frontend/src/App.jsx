@@ -12,6 +12,7 @@ const Patients = React.lazy(() => import('./components/Patients.jsx'));
 const PatientDetail = React.lazy(() => import('./components/PatientDetail.jsx'));
 const Appointments = React.lazy(() => import('./components/Appointments.jsx'));
 const Reports = React.lazy(() => import('./components/Reports.jsx'));
+const ReportScanner = React.lazy(() => import('./components/ReportScanner.jsx'));
 const Auth = React.lazy(() => import('./Auth'));
 
 // Loading component for Suspense fallback
@@ -118,6 +119,14 @@ const AppContent = () => {
             element={
               <Box sx={{ width: '100%' }}>
                 <Reports />
+              </Box>
+            }
+          />
+          <Route
+            path="scan"
+            element={
+              <Box sx={{ width: '100%' }}>
+                <ReportScanner />
               </Box>
             }
           />
